@@ -19,8 +19,8 @@ export function usePermissions() {
     isGestor,
     isLeitura,
     isStaff,
-    // Áreas de negócio: escrita somente ADMIN
-    canManageAreas: isAdmin,
+    // Áreas de negócio: criar/editar/ativar/desativar/excluir para ADMIN e GESTOR
+    canManageAreas: isStaff,
     // Campanhas e perguntas: criar/editar para ADMIN e GESTOR
     canManageCampaigns: isStaff,
     // Participantes (cadastro/importação): ADMIN e GESTOR

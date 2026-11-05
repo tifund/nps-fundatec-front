@@ -684,3 +684,62 @@ routerAdd('GET', '/backend/v1/nps/security-selftest', (e) => {
     results: results,
   })
 })
+
+// ============================================================
+// onRecordDelete areas — PROTEÇÃO DE INTEGRIDADE
+// Uma área com campanhas vinculadas NÃO pode ser excluída
+// (vale para qualquer chamada de API, inclusive com token de
+// admin/gestor). Nesses casos a área só pode ser desativada.
+// ============================================================
+onRecordDelete((e) => {
+  const vinculadas = $app.findRecordsByFilter(
+    'campaigns',
+    "area_id = '" + e.record.id + "'",
+    '',
+    1,
+    1,
+  )
+  if (vinculadas.length > 0) {
+    throw new BadRequestError(
+      'Esta área possui campanhas vinculadas e não pode ser excluída. ' +
+        'Somente áreas sem campanhas podem ser excluídas — desative esta área para impedir novas campanhas.',
+    )
+  }
+  e.next()
+}, 'areas')
+
+// ============================================================
+// onRecordCreate / onRecordUpdate areas — nome único com mensagem
+// amigável (o índice UNIQUE já existe; aqui antecipamos a validação
+// de forma case-insensitive para devolver erro claro ao usuário).
+// Nota: funções top-level não são visíveis dentro dos callbacks do
+// JSVM, então a lógica fica inline em cada handler.
+// ============================================================
+onRecordCreate((e) => {
+  const nome = (e.record.getString('nome') || '').trim().toLowerCase()
+  if (nome === '') {
+    throw new BadRequestError('Informe o nome da área de negócio.')
+  }
+  const todas = $app.findRecordsByFilter('areas', "id != ''", '', 500, 0)
+  for (const a of todas) {
+    if (a.getString('nome').trim().toLowerCase() === nome) {
+      throw new BadRequestError('Já existe uma área de negócio com este nome.')
+    }
+  }
+  e.next()
+}, 'areas')
+
+onRecordUpdate((e) => {
+  const nome = (e.record.getString('nome') || '').trim().toLowerCase()
+  if (nome === '') {
+    throw new BadRequestError('Informe o nome da área de negócio.')
+  }
+  const todas = $app.findRecordsByFilter('areas', "id != ''", '', 500, 0)
+  for (const a of todas) {
+    if (a.id === e.record.id) continue
+    if (a.getString('nome').trim().toLowerCase() === nome) {
+      throw new BadRequestError('Já existe uma área de negócio com este nome.')
+    }
+  }
+  e.next()
+}, 'areas')
