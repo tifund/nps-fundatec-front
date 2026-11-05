@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-11-05T03:19:43.025Z",
+  "generatedAt": "2026-11-05T03:37:00.396Z",
   "collections": [
     {
       "name": "users",
@@ -139,7 +139,7 @@
           "type": "select",
           "required": true,
           "system": false,
-          "selectValues": ["ativa", "encerrada"]
+          "selectValues": ["rascunho", "ativa", "encerrada"]
         },
         {
           "name": "vigencia_fim",
@@ -179,6 +179,25 @@
           "required": false,
           "system": false,
           "autodateTriggers": ["onCreate", "onUpdate"]
+        },
+        {
+          "name": "texto_email_convite",
+          "type": "editor",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "justificativa_geral",
+          "type": "text",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "vigencia_tipo",
+          "type": "select",
+          "required": false,
+          "system": false,
+          "selectValues": ["continua", "prazo"]
         }
       ],
       "indexes": [
@@ -194,7 +213,7 @@
         "view": "@request.auth.id != ''",
         "create": "(@request.auth.perfil = 'admin' || @request.auth.perfil = 'gestor')",
         "update": "(@request.auth.perfil = 'admin' || @request.auth.perfil = 'gestor')",
-        "delete": "@request.auth.perfil = 'admin'"
+        "delete": "(@request.auth.perfil = 'admin' || @request.auth.perfil = 'gestor')"
       },
       "fields": [
         {

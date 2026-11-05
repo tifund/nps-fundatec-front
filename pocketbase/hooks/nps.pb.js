@@ -6,6 +6,10 @@
  * POST /backend/v1/nps/send-invite { campaignId, participantId, isResend, baseUrl }
  */
 
+// Nota: a JSVM do PocketBase executa callbacks em pools separados — constantes
+// top-level não são visíveis dentro dos handlers. O template padrão do e-mail
+// de convite (variáveis {{pnome}} e {{link}}) fica inline nos hooks que o
+// usam (criação de campanha e envio de convite).
 // ============================================================
 // GET /backend/v1/nps/survey-context?token=... OU ?slug=...
 // Rota pública que devolve o contexto da avaliação (campanha,
@@ -106,6 +110,128 @@ routerAdd('GET', '/backend/v1/nps/survey-context', (e) => {
   }
 })
 
+// ============================================================
+// Campanhas — TRAVAS (server-side, valem para qualquer chamada de API)
+//   - status "ativa" exige área vinculada e pergunta NPS preenchida;
+//   - vigência "prazo" exige data de encerramento FUTURA;
+//   - valores padrão na criação (vigencia_tipo, texto de e-mail);
+//   - exclusão bloqueada quando há respostas (só encerrar).
+// ============================================================
+onRecordCreate((e) => {
+  const c = e.record
+  if ((c.getString('nome') || '').trim() === '') {
+    throw new BadRequestError('Informe o nome da campanha.')
+  }
+  if ((c.getString('pergunta_nps') || '').trim() === '') {
+    throw new BadRequestError('Informe a pergunta NPS da campanha.')
+  }
+  if (c.getString('area_id') === '') {
+    throw new BadRequestError('Selecione a área de negócio da campanha.')
+  }
+  const slug = (c.getString('slug') || '').trim()
+  if (slug === '') {
+    throw new BadRequestError('Informe o identificador (slug) da campanha.')
+  }
+  const duplicado = $app.findRecordsByFilter('campaigns', 'slug = {:s}', '', 1, 0, { s: slug })
+  if (duplicado.length > 0) {
+    throw new BadRequestError('Já existe uma campanha com este identificador (slug).')
+  }
+  if (c.getString('status') === '') {
+    c.set('status', 'rascunho')
+  }
+  if (c.getString('vigencia_tipo') === '') {
+    c.set('vigencia_tipo', c.getString('vigencia_fim') === '' ? 'continua' : 'prazo')
+  }
+  if (c.getString('texto_email_convite') === '') {
+    c.set(
+      'texto_email_convite',
+      '<p>Ol&aacute;, <strong>{{pnome}}</strong>,</p>' +
+        '<p>Gostar&iacute;amos muito de saber como foi sua experi&ecirc;ncia com a Fundatec. ' +
+        'Sua opini&atilde;o &eacute; fundamental para aprimorarmos continuamente nossos servi&ccedil;os.</p>' +
+        '<p style="text-align:center; margin: 24px 0;">' +
+        '<a href="{{link}}" style="background-color:#0284c7; color:#ffffff; padding:12px 28px; ' +
+        'text-decoration:none; border-radius:6px; font-weight:bold; display:inline-block;">' +
+        'Responder Avalia&ccedil;&atilde;o Agora</a></p>' +
+        '<p style="font-size:12px; color:#64748b;">Se o bot&atilde;o n&atilde;o funcionar, copie e cole ' +
+        'este link no navegador: <a href="{{link}}">{{link}}</a></p>' +
+        '<p style="font-size:11px; color:#94a3b8; text-align:center;">' +
+        'Fundatec &bull; Fundação Universidade Empresa de Tecnologia e Ciências</p>',
+    )
+  }
+  if (c.getString('status') === 'ativa') {
+    if (c.getString('area_id') === '' || (c.getString('pergunta_nps') || '').trim() === '') {
+      throw new BadRequestError(
+        'Só é possível ativar uma campanha com área de negócio vinculada e pergunta NPS preenchida.',
+      )
+    }
+    const vf = c.getString('vigencia_fim')
+    if (vf !== '' && vf < new Date().toISOString().replace('T', ' ')) {
+      throw new BadRequestError('A data de encerramento da vigência deve ser uma data futura.')
+    }
+  }
+  e.next()
+}, 'campaigns')
+
+onRecordUpdate((e) => {
+  const c = e.record
+  if (c.getString('status') === 'ativa') {
+    if (c.getString('area_id') === '' || (c.getString('pergunta_nps') || '').trim() === '') {
+      throw new BadRequestError(
+        'Só é possível ativar uma campanha com área de negócio vinculada e pergunta NPS preenchida.',
+      )
+    }
+    const vf = c.getString('vigencia_fim')
+    if (vf !== '' && vf < new Date().toISOString().replace('T', ' ')) {
+      throw new BadRequestError('A data de encerramento da vigência deve ser uma data futura.')
+    }
+  }
+  e.next()
+}, 'campaigns')
+
+onRecordDelete((e) => {
+  const respostas = $app.findRecordsByFilter(
+    'survey_responses',
+    "campaign_id = '" + e.record.id + "'",
+    '',
+    1,
+    1,
+  )
+  if (respostas.length > 0) {
+    throw new BadRequestError(
+      'Esta campanha possui respostas registradas e não pode ser excluída. ' +
+        'Campanhas com respostas podem apenas ser ENCERRADAS.',
+    )
+  }
+  e.next()
+}, 'campaigns')
+
+// Participantes: campanhas de link aberto NÃO têm lista de participantes —
+// importar/cadastrar é bloqueado server-side também.
+onRecordCreate((e) => {
+  const p = e.record
+  let campaign = null
+  try {
+    campaign = $app.findRecordById('campaigns', p.getString('campaign_id'))
+  } catch (_) {
+    throw new BadRequestError('Campanha do participante inválida.')
+  }
+  if (campaign.getString('modo_acesso') === 'link_aberto') {
+    throw new BadRequestError(
+      'Campanhas em modo "link aberto" não utilizam participantes individuais.',
+    )
+  }
+  const token = (p.getString('token') || '').trim()
+  if (token !== '') {
+    const duplicado = $app.findRecordsByFilter('participants', 'token = {:t}', '', 1, 0, {
+      t: token,
+    })
+    if (duplicado.length > 0) {
+      throw new BadRequestError('Token de convite duplicado. Gere um novo token.')
+    }
+  }
+  e.next()
+}, 'participants')
+
 routerAdd('POST', '/backend/v1/nps/send-invite', (e) => {
   const authRecord = e.auth
   if (!authRecord) {
@@ -127,11 +253,46 @@ routerAdd('POST', '/backend/v1/nps/send-invite', (e) => {
     const campaign = $app.findRecordById('campaigns', campaignId)
     const participant = $app.findRecordById('participants', participantId)
 
+    // TRAVA: campanha encerrada (manualmente ou por vigência vencida)
+    // não aceita envios nem reenvios de convite.
+    if (campaign.getString('status') !== 'ativa') {
+      return e.json(400, {
+        error: 'Esta campanha está encerrada e não aceita novos envios de convite.',
+      })
+    }
+    const vigenciaFim = campaign.getString('vigencia_fim')
+    if (vigenciaFim !== '' && vigenciaFim < new Date().toISOString().replace('T', ' ')) {
+      return e.json(400, {
+        error: 'A vigência desta campanha expirou e novos envios não são permitidos.',
+      })
+    }
+
     const inviteLink = `${baseUrl}/avaliar/${participant.getString('token')}`
 
     const emailSubject = isResend
       ? `[Lembrete] Pesquisa de Satisfação NPS - ${campaign.getString('nome')}`
       : `Convite: Pesquisa de Satisfação NPS - ${campaign.getString('nome')}`
+
+    // Corpo do e-mail: texto configurado na campanha (editor rico, com as
+    // variáveis {{pnome}} e {{link}}); quando vazio, usa o template Fundatec.
+    const pnome =
+      participant.getString('nome').trim().split(/\s+/)[0] || participant.getString('nome')
+    let corpo = campaign.getString('texto_email_convite')
+    if ((corpo || '').trim() === '') {
+      corpo =
+        '<p>Ol&aacute;, <strong>{{pnome}}</strong>,</p>' +
+        '<p>Gostar&iacute;amos muito de saber como foi sua experi&ecirc;ncia com a Fundatec. ' +
+        'Sua opini&atilde;o &eacute; fundamental para aprimorarmos continuamente nossos servi&ccedil;os.</p>' +
+        '<p style="text-align:center; margin: 24px 0;">' +
+        '<a href="{{link}}" style="background-color:#0284c7; color:#ffffff; padding:12px 28px; ' +
+        'text-decoration:none; border-radius:6px; font-weight:bold; display:inline-block;">' +
+        'Responder Avalia&ccedil;&atilde;o Agora</a></p>' +
+        '<p style="font-size:12px; color:#64748b;">Se o bot&atilde;o n&atilde;o funcionar, copie e cole ' +
+        'este link no navegador: <a href="{{link}}">{{link}}</a></p>' +
+        '<p style="font-size:11px; color:#94a3b8; text-align:center;">' +
+        'Fundatec &bull; Fundação Universidade Empresa de Tecnologia e Ciências</p>'
+    }
+    corpo = corpo.split('{{pnome}}').join(pnome).split('{{link}}').join(inviteLink)
 
     const htmlBody = `
       <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; color: #1e293b; border: 1px solid #e2e8f0; border-radius: 8px;">
@@ -139,18 +300,7 @@ routerAdd('POST', '/backend/v1/nps/send-invite', (e) => {
           <h2 style="color: #0284c7; margin-bottom: 8px;">Fundatec NPS</h2>
           <p style="color: #64748b; font-size: 14px;">Pesquisa de Satisfação e Qualidade</p>
         </div>
-        <p>Olá, <strong>${participant.getString('nome')}</strong>,</p>
-        <p>Gostaríamos muito de saber como foi sua experiência: <em>"${campaign.getString('pergunta_nps')}"</em></p>
-        <p>${campaign.getString('texto_geral') || 'Sua avaliação é rápida e nos ajuda a melhorar nossos serviços continuamente.'}</p>
-        <div style="text-align: center; margin: 30px 0;">
-          <a href="${inviteLink}" style="background-color: #0284c7; color: #ffffff; padding: 12px 28px; text-decoration: none; border-radius: 6px; font-weight: bold; display: inline-block;">
-            Responder Avaliação Agora
-          </a>
-        </div>
-        <p style="font-size: 12px; color: #94a3b8;">
-          Se o botão não funcionar, copie e cole o link a seguir no seu navegador:<br/>
-          <a href="${inviteLink}" style="color: #0284c7;">${inviteLink}</a>
-        </p>
+        ${corpo}
         <hr style="border: none; border-top: 1px solid #e2e8f0; margin: 24px 0;" />
         <p style="font-size: 11px; color: #94a3b8; text-align: center;">
           Fundatec - Fundação Universidade Empresa de Tecnologia e Ciências
@@ -634,6 +784,141 @@ routerAdd('GET', '/backend/v1/nps/security-selftest', (e) => {
     try {
       $app.delete($app.findRecordById('campaigns', tmpOpenCamp.id))
     } catch (_) {}
+  }
+
+  // ---- TRAVAS de campanha (hooks onRecord*) ----
+  // a) ativar sem área: deve falhar
+  try {
+    const campsCol = $app.findCollectionByNameOrId('campaigns')
+    const tmpSemArea = new Record(campsCol)
+    tmpSemArea.set('nome', 'Selftest Sem Area ' + Date.now())
+    tmpSemArea.set('pergunta_nps', 'Pergunta de auto-teste?')
+    tmpSemArea.set('modo_acesso', 'convites')
+    tmpSemArea.set('status', 'ativa')
+    tmpSemArea.set('justificativa_detrator', 'nenhuma')
+    tmpSemArea.set('slug', 'selftest-sem-area-' + Date.now())
+    $app.save(tmpSemArea)
+    // se chegou aqui, o hook NÃO bloqueou (apaga e marca falha)
+    try {
+      $app.delete(tmpSemArea)
+    } catch (_) {}
+    results.push({
+      test: 'trava: ativar campanha sem área é bloqueado',
+      status: 200,
+      pass: false,
+    })
+  } catch (err) {
+    results.push({
+      test: 'trava: ativar campanha sem área é bloqueado',
+      status: 400,
+      pass: true,
+      detalhe: err.message || String(err),
+    })
+  }
+
+  // b) vigência com prazo no passado ao ATIVAR: deve falhar
+  try {
+    const campsCol = $app.findCollectionByNameOrId('campaigns')
+    const tmpPrazoPassado = new Record(campsCol)
+    tmpPrazoPassado.set('nome', 'Selftest Prazo Passado ' + Date.now())
+    tmpPrazoPassado.set('pergunta_nps', 'Pergunta de auto-teste?')
+    tmpPrazoPassado.set('modo_acesso', 'convites')
+    tmpPrazoPassado.set('status', 'ativa')
+    tmpPrazoPassado.set('justificativa_detrator', 'nenhuma')
+    tmpPrazoPassado.set('vigencia_tipo', 'prazo')
+    tmpPrazoPassado.set('vigencia_fim', '2020-01-01 00:00:00.000Z')
+    tmpPrazoPassado.set('slug', 'selftest-prazo-passado-' + Date.now())
+    if (camp1) {
+      tmpPrazoPassado.set('area_id', camp1.getString('area_id'))
+    }
+    $app.save(tmpPrazoPassado)
+    try {
+      $app.delete(tmpPrazoPassado)
+    } catch (_) {}
+    results.push({
+      test: 'trava: vigência "prazo" com data passada é bloqueada',
+      status: 200,
+      pass: false,
+    })
+  } catch (err) {
+    results.push({
+      test: 'trava: vigência "prazo" com data passada é bloqueada',
+      status: 400,
+      pass: true,
+      detalhe: err.message || String(err),
+    })
+  }
+
+  // c) excluir campanha COM respostas: deve falhar (usa a seed de convites,
+  //    que tem respostas de demonstração)
+  if (camp1) {
+    try {
+      $app.delete(camp1)
+      results.push({
+        test: 'trava: excluir campanha com respostas é bloqueado',
+        status: 200,
+        pass: false,
+      })
+    } catch (err) {
+      results.push({
+        test: 'trava: excluir campanha com respostas é bloqueado',
+        status: 400,
+        pass: true,
+        detalhe: err.message || String(err),
+      })
+    }
+  }
+
+  // d) participante em campanha de link aberto: deve falhar
+  try {
+    const campsCol = $app.findCollectionByNameOrId('campaigns')
+    const tmpAberta2 = new Record(campsCol)
+    tmpAberta2.set('nome', 'Selftest Aberta Travas ' + Date.now())
+    tmpAberta2.set('pergunta_nps', 'Pergunta de auto-teste?')
+    tmpAberta2.set('modo_acesso', 'link_aberto')
+    tmpAberta2.set('status', 'rascunho')
+    tmpAberta2.set('justificativa_detrator', 'nenhuma')
+    tmpAberta2.set('slug', 'selftest-aberta-travas-' + Date.now())
+    if (camp1) {
+      tmpAberta2.set('area_id', camp1.getString('area_id'))
+    }
+    $app.save(tmpAberta2)
+
+    try {
+      const partsCol = $app.findCollectionByNameOrId('participants')
+      const pTmp = new Record(partsCol)
+      pTmp.set('campaign_id', tmpAberta2.id)
+      pTmp.set('nome', 'Participante Travas')
+      pTmp.set('email', 'travas@exemplo.com')
+      pTmp.set('token', 'tok_travas_' + Date.now())
+      $app.save(pTmp)
+      try {
+        $app.delete(pTmp)
+      } catch (_) {}
+      results.push({
+        test: 'trava: participante em campanha de link aberto é bloqueado',
+        status: 200,
+        pass: false,
+      })
+    } catch (err2) {
+      results.push({
+        test: 'trava: participante em campanha de link aberto é bloqueado',
+        status: 400,
+        pass: true,
+        detalhe: err2.message || String(err2),
+      })
+    }
+
+    try {
+      $app.delete(tmpAberta2)
+    } catch (_) {}
+  } catch (err) {
+    results.push({
+      test: 'trava: participante em campanha de link aberto é bloqueado',
+      status: 0,
+      pass: false,
+      error: err.message || String(err),
+    })
   }
 
   // ---- Campanha encerrada rejeita resposta ----

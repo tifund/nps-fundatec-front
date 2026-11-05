@@ -12,16 +12,53 @@ export interface Campaign {
   area_id: string
   pergunta_nps: string
   modo_acesso: 'convites' | 'link_aberto'
-  status: 'ativa' | 'encerrada'
-  vigencia_fim?: string
+  status: 'rascunho' | 'ativa' | 'encerrada'
+  vigencia_tipo: 'continua' | 'prazo'
+  vigencia_fim: string
   justificativa_detrator: 'obrigatoria' | 'geral' | 'nenhuma'
-  texto_geral?: string
+  justificativa_geral: string
+  texto_geral: string
+  texto_email_convite: string
   slug: string
   created: string
   updated: string
   expand?: {
     area_id?: Area
   }
+}
+
+// Dados enviados ao criar/editar uma campanha (payload da tela "Campanhas")
+export interface CreateCampaignPayload {
+  nome: string
+  area_id: string
+  pergunta_nps: string
+  modo_acesso: 'convites' | 'link_aberto'
+  status: 'rascunho' | 'ativa' | 'encerrada'
+  vigencia_tipo: 'continua' | 'prazo'
+  vigencia_fim?: string
+  justificativa_detrator: 'obrigatoria' | 'geral' | 'nenhuma'
+  justificativa_geral?: string
+  texto_geral?: string
+  texto_email_convite?: string
+  slug: string
+}
+
+// Agregados por campanha para a lista (respondidos/convocados e NPS atual)
+export interface CampaignStats {
+  respondidos: number
+  convocados: number
+  respostas: number
+  nps: number | null
+}
+
+// Pergunta adicional de campanha (mesma forma de Question, sem timestamps)
+export interface CampaignQuestion {
+  id: string
+  campaign_id: string
+  enunciado: string
+  tipo: 'nota' | 'texto'
+  obrigatoria: boolean
+  ordem: number
 }
 
 export interface Question {

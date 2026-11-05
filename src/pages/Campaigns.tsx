@@ -1,15 +1,17 @@
-import React, { useEffect, useState } from 'react'
+import React, { useEffect, useMemo, useState } from 'react'
 import {
   getCampaigns,
+  getCampaignQuestions,
+  getCampaignStats,
   createCampaign,
   updateCampaign,
-  closeCampaign,
-  getCampaignQuestions,
   createQuestion,
   deleteQuestion,
+  closeCampaign,
+  deleteCampaign,
 } from '@/services/campaigns'
 import { getAreas } from '@/services/areas'
-import { Campaign, Area, Question } from '@/types/nps'
+import { Campaign, Area, CampaignStats, Question } from '@/types/nps'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -24,14 +26,6 @@ import {
   SelectValue,
 } from '@/components/ui/select'
 import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from '@/components/ui/table'
-import {
   Dialog,
   DialogContent,
   DialogDescription,
@@ -41,44 +35,40 @@ import {
 } from '@/components/ui/dialog'
 import {
   Plus,
-  Edit2,
   Megaphone,
   Loader2,
   Copy,
-  ExternalLink,
-  HelpCircle,
   Trash2,
   Lock,
   Calendar,
   ShieldAlert,
+  Filter,
+  Search,
 } from 'lucide-react'
 import { useToast } from '@/hooks/use-toast'
 import { usePermissions } from '@/hooks/use-permissions'
+import CampaignFormDialog, { toPayload } from '@/components/CampaignFormDialog'
+import CampaignList from '@/components/CampaignList'
+import { CreateCampaignPayload } from '@/types/nps'
+
+const COLLECTION = 'campaigns'
+const QUESTIONS_COLLECTION = 'questions'
 
 export default function CampaignsPage() {
   const [campaigns, setCampaigns] = useState<Campaign[]>([])
   const [areas, setAreas] = useState<Area[]>([])
+  const [stats, setStats] = useState<Record<string, CampaignStats>>({})
   const [isLoading, setIsLoading] = useState(true)
+
+  // Filtros
+  const [filtroArea, setFiltroArea] = useState<string>('all')
+  const [filtroStatus, setFiltroStatus] = useState<string>('all')
+  const [busca, setBusca] = useState('')
 
   // Modal Campanha
   const [isDialogOpen, setIsDialogOpen] = useState(false)
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [editingCampaign, setEditingCampaign] = useState<Campaign | null>(null)
-
-  // Formulário Campanha
-  const [nome, setNome] = useState('')
-  const [areaId, setAreaId] = useState('')
-  const [perguntaNps, setPerguntaNps] = useState(
-    'Em uma escala de 0 a 10, o quanto você recomendaria a Fundatec para um amigo ou colega?',
-  )
-  const [modoAcesso, setModoAcesso] = useState<'convites' | 'link_aberto'>('convites')
-  const [status, setStatus] = useState<'ativa' | 'encerrada'>('ativa')
-  const [vigenciaFim, setVigenciaFim] = useState('')
-  const [justificativaDetrator, setJustificativaDetrator] = useState<
-    'obrigatoria' | 'geral' | 'nenhuma'
-  >('obrigatoria')
-  const [textoGeral, setTextoGeral] = useState('')
-  const [slug, setSlug] = useState('')
 
   // Modal Perguntas Adicionais
   const [selectedCampaignForQuestions, setSelectedCampaignForQuestions] = useState<Campaign | null>(
@@ -91,6 +81,14 @@ export default function CampaignsPage() {
   const [novoTipo, setNovoTipo] = useState<'nota' | 'texto'>('nota')
   const [novaObrigatoria, setNovaObrigatoria] = useState(false)
 
+  // Modal de confirmação (excluir/encerrar)
+  const [confirmDialog, setConfirmDialog] = useState<{
+    open: boolean
+    tipo: 'excluir' | 'encerrar'
+    campaign: Campaign | null
+  }>({ open: false, tipo: 'excluir', campaign: null })
+  const [isProcessing, setIsProcessing] = useState(false)
+
   const { toast } = useToast()
   const { canManageCampaigns, isLeitura } = usePermissions()
 
@@ -100,6 +98,13 @@ export default function CampaignsPage() {
       const [camps, allAreas] = await Promise.all([getCampaigns(), getAreas()])
       setCampaigns(camps)
       setAreas(allAreas)
+      try {
+        const s = await getCampaignStats(camps.map((c) => c.id))
+        setStats(s.stats)
+      } catch {
+        // estatísticas são informativas — não bloqueiam a tela
+        setStats({})
+      }
     } catch {
       toast({
         title: 'Erro ao carregar dados',
@@ -113,89 +118,63 @@ export default function CampaignsPage() {
 
   useEffect(() => {
     loadData()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
-  const generateSlug = (text: string) => {
-    return text
-      .toLowerCase()
-      .normalize('NFD')
-      .replace(/[\u0300-\u036f]/g, '')
-      .replace(/[^a-z0-9]+/g, '-')
-      .replace(/(^-|-$)+/g, '')
-  }
+  const campaignsFiltradas = useMemo(() => {
+    let lista = campaigns
+    if (filtroArea !== 'all') lista = lista.filter((c) => c.area_id === filtroArea)
+    if (filtroStatus !== 'all') {
+      lista = lista.filter((c) => {
+        if (filtroStatus === 'expirada') {
+          return (
+            c.vigencia_tipo === 'prazo' && c.vigencia_fim && new Date(c.vigencia_fim) < new Date()
+          )
+        }
+        return c.status === filtroStatus
+      })
+    }
+    if (busca.trim()) {
+      const termo = busca.trim().toLowerCase()
+      lista = lista.filter(
+        (c) => c.nome.toLowerCase().includes(termo) || c.slug.toLowerCase().includes(termo),
+      )
+    }
+    return lista
+  }, [campaigns, filtroArea, filtroStatus, busca])
 
   const handleOpenCreate = () => {
     setEditingCampaign(null)
-    setNome('')
-    setAreaId(areas.find((a) => a.ativa)?.id || '')
-    setPerguntaNps(
-      'Em uma escala de 0 a 10, o quanto você recomendaria a Fundatec para um amigo ou colega?',
-    )
-    setModoAcesso('convites')
-    setStatus('ativa')
-    setVigenciaFim('')
-    setJustificativaDetrator('obrigatoria')
-    setTextoGeral('')
-    setSlug('')
     setIsDialogOpen(true)
   }
 
   const handleOpenEdit = (c: Campaign) => {
     setEditingCampaign(c)
-    setNome(c.nome)
-    setAreaId(c.area_id)
-    setPerguntaNps(c.pergunta_nps)
-    setModoAcesso(c.modo_acesso)
-    setStatus(c.status)
-    setVigenciaFim(c.vigencia_fim ? c.vigencia_fim.split('T')[0] : '')
-    setJustificativaDetrator(c.justificativa_detrator)
-    setTextoGeral(c.texto_geral || '')
-    setSlug(c.slug)
     setIsDialogOpen(true)
   }
 
-  const handleSave = async (e: React.FormEvent) => {
-    e.preventDefault()
-    if (!nome.trim() || !areaId || !perguntaNps.trim()) {
-      toast({
-        title: 'Campos incompletos',
-        description: 'Por favor preencha nome, área e pergunta NPS.',
-        variant: 'destructive',
-      })
-      return
-    }
-
-    const finalSlug = slug.trim() ? generateSlug(slug) : generateSlug(nome)
-
+  const handleSave = async (
+    valores: Parameters<typeof toPayload>[0],
+    perguntas: { enunciado: string; tipo: 'nota' | 'texto'; obrigatoria: boolean; ordem: number }[],
+  ) => {
     setIsSubmitting(true)
     try {
-      const payload = {
-        nome: nome.trim(),
-        area_id: areaId,
-        pergunta_nps: perguntaNps.trim(),
-        modo_acesso: modoAcesso,
-        status,
-        vigencia_fim: vigenciaFim ? `${vigenciaFim} 23:59:59.000Z` : undefined,
-        justificativa_detrator: justificativaDetrator,
-        texto_geral: textoGeral.trim() || undefined,
-        slug: finalSlug,
-      }
-
+      const payload: CreateCampaignPayload = toPayload(valores)
       if (editingCampaign) {
-        await updateCampaign(editingCampaign.id, payload)
+        await updateCampaignById(editingCampaign.id, payload, perguntas)
         toast({
           title: 'Campanha atualizada',
           description: 'Alterações salvas com sucesso.',
         })
       } else {
-        await createCampaign(payload)
+        await createCampaignById(payload, perguntas)
         toast({
           title: 'Campanha criada',
           description: 'Nova campanha de NPS cadastrada com sucesso.',
         })
       }
-
       setIsDialogOpen(false)
+      setEditingCampaign(null)
       loadData()
     } catch (err: unknown) {
       toast({
@@ -208,21 +187,72 @@ export default function CampaignsPage() {
     }
   }
 
-  const handleCloseCampaign = async (c: Campaign) => {
-    if (!window.confirm(`Deseja realmente encerrar a campanha "${c.nome}"?`)) return
+  // create/update delegam para os serviços
+  const createCampaignById = async (
+    payload: CreateCampaignPayload,
+    perguntas: { enunciado: string; tipo: 'nota' | 'texto'; obrigatoria: boolean; ordem: number }[],
+  ) => createCampaign(payload, perguntas)
+
+  const updateCampaignById = async (
+    id: string,
+    payload: CreateCampaignPayload,
+    perguntas: { enunciado: string; tipo: 'nota' | 'texto'; obrigatoria: boolean; ordem: number }[],
+  ) => updateCampaign(id, payload, perguntas)
+
+  const copyOpenLink = (camp: Campaign) => {
+    const url = `${window.location.origin}/avaliar/aberto/${camp.slug}`
+    navigator.clipboard.writeText(url)
+    toast({
+      title: 'Link copiado!',
+      description: 'O link aberto da campanha foi copiado para a área de transferência.',
+    })
+  }
+
+  const confirmClose = async () => {
+    if (!confirmDialog.campaign) return
+    setIsProcessing(true)
     try {
-      await closeCampaign(c.id)
+      await closeCampaign(confirmDialog.campaign.id)
       toast({
         title: 'Campanha encerrada',
-        description: `A campanha "${c.nome}" foi encerrada para novas respostas.`,
+        description: `A campanha "${confirmDialog.campaign.nome}" foi encerrada para novas respostas.`,
       })
+      setConfirmDialog({ open: false, tipo: 'excluir', campaign: null })
       loadData()
-    } catch {
+    } catch (err: unknown) {
       toast({
         title: 'Erro ao encerrar',
-        description: 'Não foi possível encerrar a campanha.',
+        description: (err as Error)?.message || 'Não foi possível encerrar a campanha.',
         variant: 'destructive',
       })
+    } finally {
+      setIsProcessing(false)
+    }
+  }
+
+  const confirmDelete = async () => {
+    if (!confirmDialog.campaign) return
+    setIsProcessing(true)
+    try {
+      await deleteCampaign(confirmDialog.campaign.id)
+      toast({
+        title: 'Campanha excluída',
+        description: `A campanha "${confirmDialog.campaign.nome}" foi removida.`,
+      })
+      setConfirmDialog({ open: false, tipo: 'excluir', campaign: null })
+      loadData()
+    } catch (err: unknown) {
+      toast({
+        title: 'Não foi possível excluir',
+        description:
+          (err as Error)?.message ||
+          'Campanhas com respostas registradas não podem ser excluídas — apenas encerradas.',
+        variant: 'destructive',
+      })
+      setConfirmDialog({ open: false, tipo: 'excluir', campaign: null })
+      loadData()
+    } finally {
+      setIsProcessing(false)
     }
   }
 
@@ -233,7 +263,18 @@ export default function CampaignsPage() {
     setIsLoadingQuestions(true)
     try {
       const qList = await getCampaignQuestions(c.id)
-      setQuestions(qList)
+      setQuestions(
+        qList.map((q) => ({
+          id: q.id,
+          campaign_id: q.campaign_id,
+          enunciado: q.enunciado,
+          tipo: q.tipo,
+          obrigatoria: q.obrigatoria,
+          ordem: q.ordem,
+          created: '',
+          updated: '',
+        })),
+      )
     } catch {
       toast({
         title: 'Erro ao carregar perguntas',
@@ -260,7 +301,7 @@ export default function CampaignsPage() {
       setNovoEnunciado('')
       setNovaObrigatoria(false)
       const qList = await getCampaignQuestions(selectedCampaignForQuestions.id)
-      setQuestions(qList)
+      setQuestions(qList.map((q) => ({ ...q, created: '', updated: '' })) as Question[])
       toast({
         title: 'Pergunta adicionada',
         description: 'Pergunta complementar vinculada com sucesso.',
@@ -279,7 +320,7 @@ export default function CampaignsPage() {
       await deleteQuestion(qId)
       if (selectedCampaignForQuestions) {
         const qList = await getCampaignQuestions(selectedCampaignForQuestions.id)
-        setQuestions(qList)
+        setQuestions(qList.map((q) => ({ ...q, created: '', updated: '' })) as Question[])
       }
       toast({
         title: 'Pergunta removida',
@@ -294,22 +335,13 @@ export default function CampaignsPage() {
     }
   }
 
-  const copyOpenLink = (camp: Campaign) => {
-    const url = `${window.location.origin}/avaliar/aberto/${camp.slug}`
-    navigator.clipboard.writeText(url)
-    toast({
-      title: 'Link copiado!',
-      description: 'O link aberto da campanha foi copiado para a área de transferência.',
-    })
-  }
-
   return (
     <div className="space-y-6">
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
           <h1 className="text-2xl font-bold tracking-tight text-slate-800">Campanhas de NPS</h1>
           <p className="text-sm text-slate-500">
-            Crie, configure regras de justificativa e gerencie as pesquisas da Fundatec.
+            Crie, configure e gerencie as pesquisas de satisfação da Fundatec.
           </p>
         </div>
         {canManageCampaigns ? (
@@ -333,13 +365,51 @@ export default function CampaignsPage() {
           <div className="flex items-center gap-2">
             <Megaphone className="w-5 h-5 text-sky-600" />
             <CardTitle className="text-base font-semibold text-slate-800">
-              Campanhas Registradas ({campaigns.length})
+              Campanhas Registradas ({campaignsFiltradas.length})
             </CardTitle>
           </div>
           <CardDescription className="text-xs text-slate-500">
             Campanhas com modo convite requerem participantes cadastrados; link aberto gera link
             único.
           </CardDescription>
+          {/* Filtros */}
+          <div className="flex flex-col sm:flex-row gap-2 mt-3">
+            <div className="relative flex-1">
+              <Search className="w-3.5 h-3.5 text-slate-400 absolute left-2.5 top-2.5" />
+              <Input
+                placeholder="Buscar por nome ou slug..."
+                value={busca}
+                onChange={(e) => setBusca(e.target.value)}
+                className="h-8 text-xs pl-8 bg-white"
+              />
+            </div>
+            <Select value={filtroArea} onValueChange={setFiltroArea}>
+              <SelectTrigger className="w-full sm:w-[200px] h-8 text-xs bg-white">
+                <Filter className="w-3 h-3 mr-1 text-slate-400" />
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">Todas as áreas</SelectItem>
+                {areas.map((a) => (
+                  <SelectItem key={a.id} value={a.id}>
+                    {a.nome}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            <Select value={filtroStatus} onValueChange={setFiltroStatus}>
+              <SelectTrigger className="w-full sm:w-[160px] h-8 text-xs bg-white">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">Todos os status</SelectItem>
+                <SelectItem value="rascunho">Rascunho</SelectItem>
+                <SelectItem value="ativa">Ativa</SelectItem>
+                <SelectItem value="encerrada">Encerrada</SelectItem>
+                <SelectItem value="expirada">Expirada (vigência)</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
         </CardHeader>
 
         <CardContent className="p-0">
@@ -348,313 +418,40 @@ export default function CampaignsPage() {
               <Loader2 className="w-6 h-6 animate-spin text-sky-600 mb-2" />
               <p className="text-xs">Carregando campanhas...</p>
             </div>
-          ) : campaigns.length === 0 ? (
+          ) : campaignsFiltradas.length === 0 ? (
             <div className="py-12 text-center text-slate-500 text-sm">
               Nenhuma campanha encontrada. Clique em &quot;Nova Campanha&quot; para começar.
             </div>
           ) : (
-            <Table>
-              <TableHeader>
-                <TableRow className="hover:bg-transparent">
-                  <TableHead className="text-xs font-semibold text-slate-600">Campanha</TableHead>
-                  <TableHead className="text-xs font-semibold text-slate-600">Área</TableHead>
-                  <TableHead className="text-xs font-semibold text-slate-600">Modo</TableHead>
-                  <TableHead className="text-xs font-semibold text-slate-600">Situação</TableHead>
-                  <TableHead className="text-xs font-semibold text-slate-600">Vigência</TableHead>
-                  <TableHead className="text-xs font-semibold text-slate-600 text-right">
-                    Ações
-                  </TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {campaigns.map((camp) => {
-                  const areaNome = camp.expand?.area_id?.nome || 'Área não identificada'
-                  const isExpirada = camp.vigencia_fim && new Date(camp.vigencia_fim) < new Date()
-                  const statusFinal = isExpirada ? 'encerrada' : camp.status
-
-                  return (
-                    <TableRow key={camp.id} className="hover:bg-slate-50/70">
-                      <TableCell>
-                        <div className="font-semibold text-slate-800 text-sm">{camp.nome}</div>
-                        <div className="text-xs text-slate-400 font-mono mt-0.5">
-                          slug: {camp.slug}
-                        </div>
-                      </TableCell>
-                      <TableCell className="text-xs font-medium text-slate-700">
-                        {areaNome}
-                      </TableCell>
-                      <TableCell>
-                        {camp.modo_acesso === 'convites' ? (
-                          <Badge
-                            variant="outline"
-                            className="text-[11px] bg-slate-50 border-slate-200 text-slate-600"
-                          >
-                            Convites Individuais
-                          </Badge>
-                        ) : (
-                          <Badge className="text-[11px] bg-sky-50 text-sky-700 border-sky-200 hover:bg-sky-50">
-                            Link Aberto
-                          </Badge>
-                        )}
-                      </TableCell>
-                      <TableCell>
-                        {statusFinal === 'ativa' ? (
-                          <Badge className="bg-emerald-50 text-emerald-700 border-emerald-200 hover:bg-emerald-50 text-xs font-medium">
-                            Ativa
-                          </Badge>
-                        ) : (
-                          <Badge
-                            variant="outline"
-                            className="bg-rose-50 text-rose-700 border-rose-200 text-xs font-medium"
-                          >
-                            Encerrada
-                          </Badge>
-                        )}
-                      </TableCell>
-                      <TableCell className="text-xs text-slate-500">
-                        {camp.vigencia_fim ? (
-                          <div className="flex items-center gap-1">
-                            <Calendar className="w-3.5 h-3.5 text-slate-400" />
-                            {new Date(camp.vigencia_fim).toLocaleDateString('pt-BR')}
-                          </div>
-                        ) : (
-                          <span className="text-slate-400">Sem prazo</span>
-                        )}
-                      </TableCell>
-                      <TableCell className="text-right space-x-1">
-                        {camp.modo_acesso === 'link_aberto' && (
-                          <Button
-                            variant="outline"
-                            size="sm"
-                            className="h-8 text-xs text-sky-700 border-sky-200 hover:bg-sky-50"
-                            onClick={() => copyOpenLink(camp)}
-                            title="Copiar Link Aberto"
-                          >
-                            <Copy className="w-3 h-3 mr-1" />
-                            Copiar Link
-                          </Button>
-                        )}
-                        {canManageCampaigns && (
-                          <>
-                            <Button
-                              variant="ghost"
-                              size="sm"
-                              className="h-8 text-xs text-slate-600 hover:text-slate-900"
-                              onClick={() => handleOpenQuestions(camp)}
-                              title="Perguntas Adicionais"
-                            >
-                              <HelpCircle className="w-3.5 h-3.5 mr-1" />
-                              Perguntas
-                            </Button>
-                            <Button
-                              variant="outline"
-                              size="icon"
-                              className="h-8 w-8 text-slate-600 hover:text-sky-600"
-                              onClick={() => handleOpenEdit(camp)}
-                              title="Editar Campanha"
-                            >
-                              <Edit2 className="w-3.5 h-3.5" />
-                            </Button>
-                            {statusFinal === 'ativa' && (
-                              <Button
-                                variant="ghost"
-                                size="icon"
-                                className="h-8 w-8 text-slate-400 hover:text-rose-600"
-                                onClick={() => handleCloseCampaign(camp)}
-                                title="Encerrar Campanha Manualmente"
-                              >
-                                <Lock className="w-3.5 h-3.5" />
-                              </Button>
-                            )}
-                          </>
-                        )}
-                      </TableCell>
-                    </TableRow>
-                  )
-                })}
-              </TableBody>
-            </Table>
+            <CampaignList
+              campaigns={campaignsFiltradas}
+              areas={areas}
+              stats={stats}
+              canManage={canManageCampaigns}
+              onEdit={handleOpenEdit}
+              onClose={(c) => setConfirmDialog({ open: true, tipo: 'encerrar', campaign: c })}
+              onDelete={(c) => setConfirmDialog({ open: true, tipo: 'excluir', campaign: c })}
+              onCopyLink={copyOpenLink}
+              onViewQuestions={handleOpenQuestions}
+            />
           )}
         </CardContent>
       </Card>
 
       {/* Modal Criar / Editar Campanha */}
-      <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
-        <DialogContent className="sm:max-w-xl max-h-[90vh] overflow-y-auto">
-          <form onSubmit={handleSave}>
-            <DialogHeader>
-              <DialogTitle className="text-lg font-bold text-slate-800">
-                {editingCampaign ? 'Editar Campanha' : 'Criar Nova Campanha de NPS'}
-              </DialogTitle>
-              <DialogDescription className="text-xs text-slate-500">
-                Configure os parâmetros de pesquisa, texto para detratores e modo de distribuição.
-              </DialogDescription>
-            </DialogHeader>
+      <CampaignFormDialog
+        open={isDialogOpen}
+        onOpenChange={(o) => {
+          setIsDialogOpen(o)
+          if (!o) setEditingCampaign(null)
+        }}
+        areas={areas}
+        editing={editingCampaign}
+        submitting={isSubmitting}
+        onSave={handleSave}
+      />
 
-            <div className="space-y-4 py-4">
-              <div className="space-y-1.5">
-                <Label htmlFor="camp-nome" className="text-xs font-medium text-slate-700">
-                  Nome da Campanha *
-                </Label>
-                <Input
-                  id="camp-nome"
-                  placeholder="Ex: Satisfação Alunos 2025/1"
-                  value={nome}
-                  onChange={(e) => {
-                    setNome(e.target.value)
-                    if (!editingCampaign) {
-                      setSlug(generateSlug(e.target.value))
-                    }
-                  }}
-                  required
-                  className="text-sm"
-                />
-              </div>
-
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                <div className="space-y-1.5">
-                  <Label htmlFor="camp-area" className="text-xs font-medium text-slate-700">
-                    Área de Negócio *
-                  </Label>
-                  <Select value={areaId} onValueChange={setAreaId}>
-                    <SelectTrigger id="camp-area" className="text-sm">
-                      <SelectValue placeholder="Selecione a área" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {areas
-                        .filter((a) => a.ativa || a.id === areaId)
-                        .map((a) => (
-                          <SelectItem key={a.id} value={a.id}>
-                            {a.nome} {!a.ativa && '(Inativa)'}
-                          </SelectItem>
-                        ))}
-                    </SelectContent>
-                  </Select>
-                </div>
-
-                <div className="space-y-1.5">
-                  <Label htmlFor="camp-modo" className="text-xs font-medium text-slate-700">
-                    Modo de Acesso *
-                  </Label>
-                  <Select
-                    value={modoAcesso}
-                    onValueChange={(val: 'convites' | 'link_aberto') => setModoAcesso(val)}
-                  >
-                    <SelectTrigger id="camp-modo" className="text-sm">
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="convites">Convites Individuais por E-mail</SelectItem>
-                      <SelectItem value="link_aberto">Link Aberto (URL Única)</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
-              </div>
-
-              <div className="space-y-1.5">
-                <Label htmlFor="camp-pergunta" className="text-xs font-medium text-slate-700">
-                  Pergunta Principal do NPS (0 a 10) *
-                </Label>
-                <Textarea
-                  id="camp-pergunta"
-                  rows={2}
-                  value={perguntaNps}
-                  onChange={(e) => setPerguntaNps(e.target.value)}
-                  required
-                  className="text-sm"
-                />
-              </div>
-
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                <div className="space-y-1.5">
-                  <Label htmlFor="camp-detrator" className="text-xs font-medium text-slate-700">
-                    Justificativa de Detrator (nota 0–6)
-                  </Label>
-                  <Select
-                    value={justificativaDetrator}
-                    onValueChange={(val: 'obrigatoria' | 'geral' | 'nenhuma') =>
-                      setJustificativaDetrator(val)
-                    }
-                  >
-                    <SelectTrigger id="camp-detrator" className="text-sm">
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="obrigatoria">Obrigatória para notas 0 a 6</SelectItem>
-                      <SelectItem value="geral">Opcional / Texto Geral</SelectItem>
-                      <SelectItem value="nenhuma">Não solicitar justificativa</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
-
-                <div className="space-y-1.5">
-                  <Label htmlFor="camp-vigencia" className="text-xs font-medium text-slate-700">
-                    Data Limite de Vigência (opcional)
-                  </Label>
-                  <Input
-                    id="camp-vigencia"
-                    type="date"
-                    value={vigenciaFim}
-                    onChange={(e) => setVigenciaFim(e.target.value)}
-                    className="text-sm"
-                  />
-                </div>
-              </div>
-
-              <div className="space-y-1.5">
-                <Label htmlFor="camp-texto" className="text-xs font-medium text-slate-700">
-                  Texto Introdutório / Contexto da Avaliação
-                </Label>
-                <Textarea
-                  id="camp-texto"
-                  rows={2}
-                  placeholder="Mensagem de boas-vindas exibida no topo da página de resposta..."
-                  value={textoGeral}
-                  onChange={(e) => setTextoGeral(e.target.value)}
-                  className="text-sm"
-                />
-              </div>
-
-              <div className="space-y-1.5">
-                <Label htmlFor="camp-slug" className="text-xs font-medium text-slate-700">
-                  Identificador / Slug da URL *
-                </Label>
-                <Input
-                  id="camp-slug"
-                  placeholder="ex: nps-alunos-2025"
-                  value={slug}
-                  onChange={(e) => setSlug(generateSlug(e.target.value))}
-                  required
-                  className="text-sm font-mono"
-                />
-              </div>
-            </div>
-
-            <DialogFooter>
-              <Button
-                type="button"
-                variant="outline"
-                onClick={() => setIsDialogOpen(false)}
-                disabled={isSubmitting}
-              >
-                Cancelar
-              </Button>
-              <Button type="submit" className="bg-sky-600 hover:bg-sky-700" disabled={isSubmitting}>
-                {isSubmitting ? (
-                  <>
-                    <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                    Salvando...
-                  </>
-                ) : (
-                  'Salvar Campanha'
-                )}
-              </Button>
-            </DialogFooter>
-          </form>
-        </DialogContent>
-      </Dialog>
-
-      {/* Modal de Perguntas Adicionais */}
+      {/* Modal de Perguntas Adicionais (gestão pós-criação) */}
       <Dialog open={isQuestionDialogOpen} onOpenChange={setIsQuestionDialogOpen}>
         <DialogContent className="sm:max-w-lg max-h-[85vh] overflow-y-auto">
           <DialogHeader>
@@ -787,6 +584,84 @@ export default function CampaignsPage() {
           <DialogFooter>
             <Button variant="outline" onClick={() => setIsQuestionDialogOpen(false)}>
               Fechar
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Modal de confirmação: Encerrar / Excluir */}
+      <Dialog
+        open={confirmDialog.open}
+        onOpenChange={(o) => setConfirmDialog((prev) => ({ ...prev, open: o }))}
+      >
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle className="text-base font-bold text-slate-800 flex items-center gap-2">
+              {confirmDialog.tipo === 'excluir' ? (
+                <>
+                  <Trash2 className="w-4 h-4 text-rose-600" />
+                  Excluir Campanha
+                </>
+              ) : (
+                <>
+                  <Lock className="w-4 h-4 text-amber-600" />
+                  Encerrar Campanha
+                </>
+              )}
+            </DialogTitle>
+            <DialogDescription className="text-xs text-slate-500 pt-1">
+              {confirmDialog.tipo === 'excluir' ? (
+                <>
+                  Tem certeza que deseja excluir a campanha{' '}
+                  <strong>&quot;{confirmDialog.campaign?.nome}&quot;</strong>? Esta ação não pode
+                  ser desfeita. Campanhas com respostas registradas não podem ser excluídas — apenas
+                  encerradas.
+                </>
+              ) : (
+                <>
+                  Deseja realmente encerrar a campanha{' '}
+                  <strong>&quot;{confirmDialog.campaign?.nome}&quot;</strong>? Ela deixará de
+                  aceitar respostas e reenvios.
+                </>
+              )}
+            </DialogDescription>
+          </DialogHeader>
+          {confirmDialog.tipo === 'encerrar' && confirmDialog.campaign && (
+            <div className="flex items-center gap-2 rounded-lg bg-slate-50 border border-slate-200 px-3 py-2 text-xs text-slate-600">
+              <Calendar className="w-3.5 h-3.5 text-slate-400" />
+              {confirmDialog.campaign.vigencia_tipo === 'prazo' &&
+              confirmDialog.campaign.vigencia_fim
+                ? `Vigência atual: até ${new Date(confirmDialog.campaign.vigencia_fim).toLocaleDateString('pt-BR')}`
+                : 'Vigência atual: contínua (sem data de fim)'}
+            </div>
+          )}
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={() => setConfirmDialog((prev) => ({ ...prev, open: false }))}
+              disabled={isProcessing}
+            >
+              Cancelar
+            </Button>
+            <Button
+              onClick={confirmDialog.tipo === 'excluir' ? confirmDelete : confirmClose}
+              disabled={isProcessing}
+              className={
+                confirmDialog.tipo === 'excluir'
+                  ? 'bg-rose-600 hover:bg-rose-700'
+                  : 'bg-amber-600 hover:bg-amber-700'
+              }
+            >
+              {isProcessing ? (
+                <>
+                  <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                  Processando...
+                </>
+              ) : confirmDialog.tipo === 'excluir' ? (
+                'Excluir definitivamente'
+              ) : (
+                'Encerrar campanha'
+              )}
             </Button>
           </DialogFooter>
         </DialogContent>
