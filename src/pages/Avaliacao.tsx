@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
-import { useSearchParams, Link } from 'react-router-dom'
+import { useParams, useSearchParams, Link } from 'react-router-dom'
 import { Loader2, ShieldCheck, Send, PartyPopper } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Checkbox } from '@/components/ui/checkbox'
@@ -73,9 +73,10 @@ function RotulosEscala() {
 
 export function AvaliacaoPage() {
   const [searchParams] = useSearchParams()
+  const routeParams = useParams<{ token?: string; slug?: string }>()
   const param: ParametroAvaliacao | null = useMemo(
-    () => parseAvaliacaoParams(searchParams),
-    [searchParams],
+    () => parseAvaliacaoParams(searchParams, routeParams),
+    [searchParams, routeParams],
   )
 
   const [carregando, setCarregando] = useState(true)

@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-11-05T11:57:11.057Z",
+  "generatedAt": "2026-11-05T15:20:35.645Z",
   "collections": [
     {
       "name": "users",
@@ -29,30 +29,21 @@
           "type": "autodate",
           "required": false,
           "system": false,
-          "autodateTriggers": [
-            "onCreate"
-          ]
+          "autodateTriggers": ["onCreate"]
         },
         {
           "name": "updated",
           "type": "autodate",
           "required": false,
           "system": false,
-          "autodateTriggers": [
-            "onCreate",
-            "onUpdate"
-          ]
+          "autodateTriggers": ["onCreate", "onUpdate"]
         },
         {
           "name": "perfil",
           "type": "select",
           "required": true,
           "system": false,
-          "selectValues": [
-            "admin",
-            "gestor",
-            "leitura"
-          ]
+          "selectValues": ["admin", "gestor", "leitura"]
         },
         {
           "name": "precisa_trocar_senha",
@@ -94,24 +85,17 @@
           "type": "autodate",
           "required": false,
           "system": false,
-          "autodateTriggers": [
-            "onCreate"
-          ]
+          "autodateTriggers": ["onCreate"]
         },
         {
           "name": "updated",
           "type": "autodate",
           "required": false,
           "system": false,
-          "autodateTriggers": [
-            "onCreate",
-            "onUpdate"
-          ]
+          "autodateTriggers": ["onCreate", "onUpdate"]
         }
       ],
-      "indexes": [
-        "CREATE UNIQUE INDEX idx_areas_nome ON areas (nome)"
-      ]
+      "indexes": ["CREATE UNIQUE INDEX idx_areas_nome ON areas (nome)"]
     },
     {
       "name": "campaigns",
@@ -148,21 +132,14 @@
           "type": "select",
           "required": true,
           "system": false,
-          "selectValues": [
-            "convites",
-            "link_aberto"
-          ]
+          "selectValues": ["convites", "link_aberto"]
         },
         {
           "name": "status",
           "type": "select",
           "required": true,
           "system": false,
-          "selectValues": [
-            "rascunho",
-            "ativa",
-            "encerrada"
-          ]
+          "selectValues": ["rascunho", "ativa", "encerrada"]
         },
         {
           "name": "vigencia_fim",
@@ -175,11 +152,7 @@
           "type": "select",
           "required": true,
           "system": false,
-          "selectValues": [
-            "obrigatoria",
-            "geral",
-            "nenhuma"
-          ]
+          "selectValues": ["obrigatoria", "geral", "nenhuma"]
         },
         {
           "name": "texto_geral",
@@ -198,19 +171,14 @@
           "type": "autodate",
           "required": false,
           "system": false,
-          "autodateTriggers": [
-            "onCreate"
-          ]
+          "autodateTriggers": ["onCreate"]
         },
         {
           "name": "updated",
           "type": "autodate",
           "required": false,
           "system": false,
-          "autodateTriggers": [
-            "onCreate",
-            "onUpdate"
-          ]
+          "autodateTriggers": ["onCreate", "onUpdate"]
         },
         {
           "name": "texto_email_convite",
@@ -229,10 +197,7 @@
           "type": "select",
           "required": false,
           "system": false,
-          "selectValues": [
-            "continua",
-            "prazo"
-          ]
+          "selectValues": ["continua", "prazo"]
         }
       ],
       "indexes": [
@@ -269,10 +234,7 @@
           "type": "select",
           "required": true,
           "system": false,
-          "selectValues": [
-            "nota",
-            "texto"
-          ]
+          "selectValues": ["nota", "texto"]
         },
         {
           "name": "obrigatoria",
@@ -291,24 +253,17 @@
           "type": "autodate",
           "required": false,
           "system": false,
-          "autodateTriggers": [
-            "onCreate"
-          ]
+          "autodateTriggers": ["onCreate"]
         },
         {
           "name": "updated",
           "type": "autodate",
           "required": false,
           "system": false,
-          "autodateTriggers": [
-            "onCreate",
-            "onUpdate"
-          ]
+          "autodateTriggers": ["onCreate", "onUpdate"]
         }
       ],
-      "indexes": [
-        "CREATE INDEX idx_questions_campaign ON questions (campaign_id, ordem)"
-      ]
+      "indexes": ["CREATE INDEX idx_questions_campaign ON questions (campaign_id, ordem)"]
     },
     {
       "name": "participants",
@@ -363,19 +318,14 @@
           "type": "autodate",
           "required": false,
           "system": false,
-          "autodateTriggers": [
-            "onCreate"
-          ]
+          "autodateTriggers": ["onCreate"]
         },
         {
           "name": "updated",
           "type": "autodate",
           "required": false,
           "system": false,
-          "autodateTriggers": [
-            "onCreate",
-            "onUpdate"
-          ]
+          "autodateTriggers": ["onCreate", "onUpdate"]
         }
       ],
       "indexes": [
@@ -413,11 +363,7 @@
           "type": "select",
           "required": true,
           "system": false,
-          "selectValues": [
-            "inicial",
-            "reenvio",
-            "copia_link"
-          ]
+          "selectValues": ["inicial", "reenvio", "copia_link"]
         },
         {
           "name": "destinatario",
@@ -430,11 +376,7 @@
           "type": "select",
           "required": true,
           "system": false,
-          "selectValues": [
-            "sucesso",
-            "falha",
-            "registrado"
-          ]
+          "selectValues": ["sucesso", "falha", "registrado"]
         },
         {
           "name": "detalhe",
@@ -447,24 +389,17 @@
           "type": "autodate",
           "required": false,
           "system": false,
-          "autodateTriggers": [
-            "onCreate"
-          ]
+          "autodateTriggers": ["onCreate"]
         },
         {
           "name": "updated",
           "type": "autodate",
           "required": false,
           "system": false,
-          "autodateTriggers": [
-            "onCreate",
-            "onUpdate"
-          ]
+          "autodateTriggers": ["onCreate", "onUpdate"]
         }
       ],
-      "indexes": [
-        "CREATE INDEX idx_dispatches_campaign ON dispatches (campaign_id, created DESC)"
-      ]
+      "indexes": ["CREATE INDEX idx_dispatches_campaign ON dispatches (campaign_id, created DESC)"]
     },
     {
       "name": "survey_responses",
@@ -502,11 +437,7 @@
           "type": "select",
           "required": true,
           "system": false,
-          "selectValues": [
-            "promotor",
-            "neutro",
-            "detrator"
-          ]
+          "selectValues": ["promotor", "neutro", "detrator"]
         },
         {
           "name": "comentario",
@@ -537,19 +468,14 @@
           "type": "autodate",
           "required": false,
           "system": false,
-          "autodateTriggers": [
-            "onCreate"
-          ]
+          "autodateTriggers": ["onCreate"]
         },
         {
           "name": "updated",
           "type": "autodate",
           "required": false,
           "system": false,
-          "autodateTriggers": [
-            "onCreate",
-            "onUpdate"
-          ]
+          "autodateTriggers": ["onCreate", "onUpdate"]
         },
         {
           "name": "tratado",
@@ -615,24 +541,17 @@
           "type": "autodate",
           "required": false,
           "system": false,
-          "autodateTriggers": [
-            "onCreate"
-          ]
+          "autodateTriggers": ["onCreate"]
         },
         {
           "name": "updated",
           "type": "autodate",
           "required": false,
           "system": false,
-          "autodateTriggers": [
-            "onCreate",
-            "onUpdate"
-          ]
+          "autodateTriggers": ["onCreate", "onUpdate"]
         }
       ],
-      "indexes": [
-        "CREATE INDEX idx_system_logs_created ON system_logs (created DESC)"
-      ]
+      "indexes": ["CREATE INDEX idx_system_logs_created ON system_logs (created DESC)"]
     }
   ]
 }
