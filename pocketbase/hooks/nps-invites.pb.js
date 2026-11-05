@@ -220,8 +220,7 @@ routerAdd('POST', '/backend/v1/nps/send-invites-batch', (e) => {
       }
 
       resultados.push({
-        participante: p.getString('nome'),
-        email: p.getString('email'),
+        participante: p.id,
         status: statusEnvio,
       })
     }

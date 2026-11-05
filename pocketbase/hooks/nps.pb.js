@@ -397,9 +397,11 @@ routerAdd('POST', '/backend/v1/nps/send-invite', (e) => {
     const logsCol = $app.findCollectionByNameOrId('system_logs')
     const log = new Record(logsCol)
     log.set('acao', isResend ? 'reenvio_convite' : 'envio_convite')
+    // LGPD: log do sistema sem dados pessoais — o destinatário fica registrado
+    // apenas em dispatches (finalidade da campanha).
     log.set(
       'detalhe',
-      `Convite ${isResend ? 'reenviado' : 'enviado'} para ${participant.getString('email')} na campanha "${campaign.getString('nome')}". Status: ${statusEnvio}`,
+      `Convite ${isResend ? 'reenviado' : 'enviado'} para o participante ${participant.id} na campanha "${campaign.getString('nome')}". Status: ${statusEnvio}`,
     )
     log.set('usuario', authRecord.getString('email') || 'admin')
     $app.save(log)
@@ -429,8 +431,16 @@ routerAdd('POST', '/backend/v1/nps/send-invite', (e) => {
 // ============================================================
 onRecordCreate((e) => {
   const record = e.record
-  const body = e.requestInfo().body || {}
-  const token = (body.token || '').toString().trim()
+  // O hook também roda em salvamentos INTERNOS (seeds/migrações via app.save),
+  // onde não existe requisição HTTP — e.requestInfo() não está disponível.
+  let token = ''
+  let viaHttp = true
+  try {
+    const body = e.requestInfo().body || {}
+    token = (body.token || '').toString().trim()
+  } catch (_) {
+    viaHttp = false
+  }
 
   // Campanha informada deve existir
   let campaign = null
@@ -450,6 +460,27 @@ onRecordCreate((e) => {
   const vigenciaFim = campaign.getString('vigencia_fim')
   if (vigenciaFim !== '' && vigenciaFim < nowStr) {
     throw new BadRequestError('O período de recebimento de respostas desta campanha expirou.')
+  }
+
+  // Nota válida e classificação coerente com a nota (server-side, imune a
+  // envio direto à API com classificação falsa que distorceria o NPS).
+  const nota = record.getInt('nota')
+  if (nota < 0 || nota > 10) {
+    throw new BadRequestError('A nota deve estar entre 0 e 10.')
+  }
+  const classifEsperada = nota >= 9 ? 'promotor' : nota <= 6 ? 'detrator' : 'neutro'
+  if (record.getString('classificacao') !== classifEsperada) {
+    record.set('classificacao', classifEsperada)
+  }
+
+  // Justificativa do detrator: modo "obrigatoria" bloqueia nota 0-6 sem texto
+  // TAMBÉM no backend (a página pública já bloqueia no formulário).
+  if (
+    campaign.getString('justificativa_detrator') === 'obrigatoria' &&
+    nota <= 6 &&
+    (record.getString('justificativa_detrator') || '').trim() === ''
+  ) {
+    throw new BadRequestError('A justificativa é obrigatória para notas de 0 a 6.')
   }
 
   let participant = null
@@ -472,12 +503,25 @@ onRecordCreate((e) => {
     }
     // Vínculo da resposta com o participante do convite
     record.set('participant_id', participant.id)
-  } else {
-    // Sem token: apenas campanha ativa de link aberto
+  } else if (viaHttp) {
+    // Via HTTP sem token: apenas campanha ativa de link aberto. O participant_id
+    // informado no corpo é descartado (um anônimo não pode marcar convite como
+    // respondido nem forjar vínculo).
+    record.set('participant_id', '')
     if (campaign.getString('modo_acesso') !== 'link_aberto') {
       throw new BadRequestError(
         'Esta campanha só aceita respostas através do convite individual recebido.',
       )
+    }
+  } else {
+    // Salvamento interno (seed/migração): usa o vínculo já gravado no registro,
+    // validando que o participante pertence à campanha.
+    const pid = record.getString('participant_id')
+    if (pid !== '') {
+      try {
+        const p = $app.findRecordById('participants', pid)
+        if (p.getString('campaign_id') === campaign.id) participant = p
+      } catch (_) {}
     }
   }
 
@@ -496,6 +540,8 @@ onRecordCreate((e) => {
     const logsCol = $app.findCollectionByNameOrId('system_logs')
     const log = new Record(logsCol)
     log.set('acao', 'resposta_enviada')
+    // LGPD: o log do sistema NÃO registra dados pessoais (nome/e-mail do
+    // participante) — quem respondeu fica visível apenas no painel da campanha.
     log.set(
       'detalhe',
       'Avaliação NPS registrada com nota ' +
@@ -505,9 +551,9 @@ onRecordCreate((e) => {
         ') na campanha "' +
         campaign.getString('nome') +
         '".' +
-        (participant ? ' Participante: ' + participant.getString('nome') + '.' : ' Link aberto.'),
+        (participant ? ' Via convite individual.' : ' Via link aberto.'),
     )
-    log.set('usuario', participant ? participant.getString('email') : 'Visitante (link aberto)')
+    log.set('usuario', participant ? 'convite individual' : 'Visitante (link aberto)')
     $app.save(log)
   } catch (err) {
     console.log('Falha ao registrar log de resposta: ' + (err.message || String(err)))
