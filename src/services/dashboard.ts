@@ -3,8 +3,10 @@
 import pb from '@/lib/pocketbase/client'
 import { getAreas } from '@/services/areas'
 import { getSurveyResponses } from '@/services/responses'
+import { getParticipants } from '@/services/participants'
+import { getCampaignStats } from '@/services/campaigns'
 import { calcularNps, respostaNoPeriodo, isoHoje, isoNDiasAtras } from '@/lib/nps/calculos'
-import type { Area, Campaign, CampaignStats } from '@/types/nps'
+import type { Area, Campaign, CampaignStats, SurveyResponse } from '@/types/nps'
 
 export { isoHoje, isoNDiasAtras }
 export type { Area, Campaign }
@@ -97,20 +99,16 @@ export async function carregarVisaoGeral(
   respostas: SurveyResponse[],
   periodo: PeriodoFiltro,
 ): Promise<VisaoGeral> {
+  // Contagem de convocados por campanha vem do serviço existente (participants).
+  const stats = await getCampaignStats(campanhas.map((c) => c.id)).then((r) => r.stats)
   const linhas: LinhaCampanha[] = campanhas.map((c) => {
     const doPeriodo = respostas.filter(
       (r) => r.campaign_id === c.id && respostaNoPeriodo(r, periodo.de, periodo.ate),
     )
+    const s = stats[c.id] || { convocados: 0, respondidos: 0, respostas: 0, nps: null }
     return {
       campaign: c,
-      stats: {
-        total_participants: c.expand?.total_participantes ?? 0,
-        answered: doPeriodo.length,
-        response_rate: c.expand?.total_participantes
-          ? doPeriodo.length / c.expand.total_participantes
-          : 0,
-        nps: calcularNps(doPeriodo).nps ?? 0,
-      },
+      stats: { ...s, respostas: doPeriodo.length, nps: calcularNps(doPeriodo).nps },
       respostas: doPeriodo.length,
       nps: calcularNps(doPeriodo).nps,
       npsTexto: npsTexto(calcularNps(doPeriodo).nps),

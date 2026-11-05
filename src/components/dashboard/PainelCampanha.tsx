@@ -31,7 +31,14 @@ import { GraficoEvolucao } from '@/components/dashboard/GraficoEvolucao'
 import { GraficoDistribuicao } from '@/components/dashboard/GraficoDistribuicao'
 import { GestaoDetratores } from '@/components/dashboard/GestaoDetratores'
 import { marcarTratado } from '@/services/tratativa'
-import { calcularNps, formulaNps, rotuloContato, evolucaoNps } from '@/lib/nps/calculos'
+import {
+  calcularNps,
+  formulaNps,
+  rotuloContato,
+  evolucaoNps,
+  corFaixa,
+  faixaDaNota,
+} from '@/lib/nps/calculos'
 import { exportarRelatorioCsv, exportarRelatorioPdf } from '@/lib/nps/exportacao'
 import { usePermissions } from '@/hooks/use-permissions'
 import type { Campaign, SurveyResponse } from '@/types/nps'
@@ -364,7 +371,10 @@ export function PainelCampanha({
                               <Badge
                                 variant="outline"
                                 className="text-[10px] font-bold"
-                                style={{ color: corNota(r.nota), borderColor: corNota(r.nota) }}
+                                style={{
+                                  color: corFaixa[faixaDaNota(r.nota)],
+                                  borderColor: corFaixa[faixaDaNota(r.nota)],
+                                }}
                               >
                                 {r.nota}
                               </Badge>

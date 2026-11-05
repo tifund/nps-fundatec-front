@@ -1,6 +1,15 @@
-// Exportações do dashboard: CSV nativo (sem dependências) e PDF (jsPDF, ~380 KB).
+// Exportações do dashboard: CSV nativo (sem dependências) e relatório em
+// HTML imprimível — o usuário salva como PDF pelo próprio navegador
+// ("Imprimir > Salvar como PDF"), sem pacote extra.
 // Regra inegociável: respostas anônimas NUNCA mostram nome/e-mail em nenhuma exportação.
-import { calcularNps, formulaNps, rotuloContato } from './calculos'
+import {
+  calcularNps,
+  formulaNps,
+  rotuloContato,
+  contatoDaResposta,
+  faixaDaNota,
+  corFaixa,
+} from './calculos'
 import type { Campaign, SurveyResponse } from '@/types/nps'
 
 // ---------- CSV ----------
@@ -9,6 +18,14 @@ function esc(valor: string | number | boolean): string {
   const s = String(valor ?? '')
   // Aspas duplas, separador e quebras de linha são escapados.
   return `"${s.replace(/"/g, '""')}"`
+}
+
+function escHtml(s: string): string {
+  return s
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
 }
 
 function baixar(nome: string, conteudo: BlobPart, tipo: string): void {
@@ -27,9 +44,9 @@ export function baixarCsv(
   cabecalho: string[],
   linhas: (string | number | boolean)[][],
 ): void {
-  const csv = [cabecalho, ...linhas].map((l) => l.map(esc).join(';')).join('\r\n')
+  const corpo = [cabecalho, ...linhas].map((l) => l.map(esc).join(';')).join('\r\n')
   // BOM para o Excel abrir acentuação correta
-  baixar(nome, '\uFEFF' + csv, 'text/csv;charset=utf-8')
+  baixar(nome, '\uFEFF' + corpo, 'text/csv;charset=utf-8')
 }
 
 export function fmtDataHora(iso: string): string {
@@ -43,9 +60,9 @@ export function exportarRelatorioCsv(
   campanha: Campaign,
   respostas: SurveyResponse[],
   periodo: { de: string; ate: string },
-  detratoresTratados: number,
 ): void {
   const d = calcularNps(respostas)
+  const tratados = respostas.filter((r) => r.nota <= 6 && r.tratado).length
   const linhas: (string | number | boolean)[][] = []
 
   linhas.push(['Relatório NPS — Fundatec'])
@@ -66,7 +83,7 @@ export function exportarRelatorioCsv(
   linhas.push(['% Detratores', d.pctDetratores])
   linhas.push(['NPS do período', d.nps ?? '—'])
   linhas.push(['Fórmula', formulaNps(d)])
-  linhas.push(['Detratores tratados', detratoresTratados])
+  linhas.push(['Detratores tratados', tratados])
   linhas.push([])
 
   linhas.push(['Distribuição de notas'])
@@ -75,21 +92,13 @@ export function exportarRelatorioCsv(
   linhas.push([])
 
   linhas.push(['Respostas do período'])
-  linhas.push([
-    'Data',
-    'Respondente',
-    'Nota',
-    'Classificação',
-    'Justificativa (detrator)',
-    'Comentário',
-  ])
+  linhas.push(['Data', 'Respondente', 'Nota', 'Classificação', 'Comentário'])
   for (const r of respostas) {
     linhas.push([
       fmtDataHora(r.created),
       rotuloContato(r), // 'Anônimo' quando anônima — sem nome/e-mail
       r.nota,
       r.classificacao,
-      r.justificativa_detrator || '',
       r.comentario || '',
     ])
   }
@@ -121,201 +130,217 @@ export function exportarRelatorioCsv(
   baixarCsv(`relatorio-nps-${slug}-${periodo.de}-${periodo.ate}.csv`, [], linhas)
 }
 
-// ---------- Relatório da campanha (PDF, jsPDF) ----------
+// ---------- Lista de detratores (CSV, aba Gestão de Detratores) ----------
 
-const AZUL = [7, 89, 133] as const // sky-800 aproximado
-const CINZA = [100, 116, 139] as const // slate-500
+export function exportarDetratoresCsv(respostas: SurveyResponse[]): void {
+  const cabecalho = [
+    'Data',
+    'Respondente',
+    'E-mail',
+    'Nota',
+    'Justificativa',
+    'Comentário',
+    'Tratado',
+    'Nota interna',
+  ]
+  const linhas = respostas.map((r) => {
+    // contato é null quando anônima — e-mail e nome ficam vazios
+    const contato = contatoDaResposta(r)
+    return [
+      fmtDataHora(r.created),
+      contato ? contato.nome : 'Anônimo',
+      contato ? contato.email : '',
+      r.nota,
+      r.justificativa_detrator || '',
+      r.comentario || '',
+      r.tratado ? 'Sim' : 'Não',
+      r.nota_interna || '',
+    ]
+  })
+  baixarCsv(`detratores-nps-${new Date().toISOString().slice(0, 10)}.csv`, cabecalho, linhas)
+}
+
+// ---------- Relatório da campanha (imprimível → PDF pelo navegador) ----------
 
 export async function exportarRelatorioPdf(
   campanha: Campaign,
   respostas: SurveyResponse[],
   periodo: { de: string; ate: string },
-  detratoresTratados: number,
 ): Promise<void> {
-  const { jsPDF } = await import('jspdf')
-  const doc = new jsPDF({ unit: 'pt', format: 'a4' })
-  const larguraPag = doc.internal.pageSize.getWidth()
-  const alturaPag = doc.internal.pageSize.getHeight()
-  const margem = 40
-  const larguraUtil = larguraPag - margem * 2
   const d = calcularNps(respostas)
-  let y = margem
-
-  const texto = (s: string, size = 10, cor: number[] = [30, 41, 59], negrito = false): void => {
-    if (y > alturaPag - 60) {
-      doc.addPage()
-      y = margem
-    }
-    doc.setFont('helvetica', negrito ? 'bold' : 'normal')
-    doc.setFontSize(size)
-    doc.setTextColor(cor[0], cor[1], cor[2])
-    const linhasTxt = doc.splitTextToSize(s, larguraUtil)
-    for (const l of linhasTxt) {
-      doc.text(l, margem, y)
-      y += size * 1.35
-    }
+  const tratados = respostas.filter((r) => r.nota <= 6 && r.tratado).length
+  const html = relatorioHtml(campanha, respostas, periodo, d, tratados)
+  const janela = window.open('', '_blank', 'width=920,height=1100')
+  if (janela) {
+    janela.document.open()
+    janela.document.write(html)
+    janela.document.close()
+    janela.focus()
+    // pequena espera para o navegador montar o documento antes do diálogo
+    await new Promise((r) => setTimeout(r, 350))
+    janela.print()
+    return
   }
-
-  const pular = (n = 8): void => {
-    y += n
-  }
-
-  // Cabeçalho
-  doc.setFillColor(AZUL[0], AZUL[1], AZUL[2])
-  doc.rect(0, 0, larguraPag, 64, 'F')
-  doc.setTextColor(255, 255, 255)
-  doc.setFont('helvetica', 'bold')
-  doc.setFontSize(16)
-  doc.text('Fundatec — Relatório NPS', margem, 30)
-  doc.setFont('helvetica', 'normal')
-  doc.setFontSize(10)
-  doc.text('Pesquisa de Satisfação', margem, 46)
-  y = 92
-
-  doc.setTextColor(30, 41, 59)
-  texto(`Campanha: ${campanha.nome}`, 13, [15, 23, 42], true)
-  texto(
-    `Área: ${campanha.area_nome || campanha.expand?.area_id?.nome || '—'}   ·   Período: ${periodo.de} a ${periodo.ate}`,
-    10,
-    CINZA,
-  )
-  texto(`Pergunta NPS: ${campanha.pergunta_nps}`, 10, CINZA)
-  pular(6)
-
-  texto('KPIs do período', 11, [15, 23, 42], true)
-  texto(
-    `Respostas no período: ${d.total}    ·    Promotores (9–10): ${d.promotores} (${d.pctPromotores}%)    ·    Neutros (7–8): ${d.neutros} (${d.pctNeutros}%)    ·    Detratores (0–6): ${d.detratores} (${d.pctDetratores}%)`,
-  )
-  texto(`NPS do período: ${d.nps ?? '—'}    ·    Fórmula: ${formulaNps(d)}`)
-  texto(`Detratores tratados: ${detratoresTratados}`)
-  pular(8)
-
-  // Distribuição de notas
-  texto('Distribuição de notas (0–10)', 11, [15, 23, 42], true)
-  pular(4)
-  const maxCount = Math.max(1, ...d.counts)
-  const alturaBarra = 42
-  const larguraBarra = Math.min(30, larguraUtil / 14)
-  for (let nota = 0; nota <= 10; nota++) {
-    const x = margem + nota * (larguraBarra + 4)
-    const h = Math.round((d.counts[nota] / maxCount) * alturaBarra)
-    const cor: number[] = nota <= 6 ? [225, 29, 72] : nota <= 8 ? [245, 158, 11] : [5, 150, 105]
-    doc.setFillColor(cor[0], cor[1], cor[2])
-    doc.rect(x, y + (alturaBarra - h), larguraBarra, Math.max(h, 1), 'F')
-    doc.setFont('helvetica', 'normal')
-    doc.setFontSize(7)
-    doc.setTextColor(100, 116, 139)
-    doc.text(String(nota), x + larguraBarra / 2, y + alturaBarra + 10, { align: 'center' })
-    doc.text(String(d.counts[nota]), x + larguraBarra / 2, y + alturaBarra + 20, {
-      align: 'center',
-    })
-  }
-  y += alturaBarra + 34
-  pular(6)
-
-  // Respostas do período (anonimato preservado)
-  texto('Respostas do período', 11, [15, 23, 42], true)
-  pular(2)
-  const linhasResp: (string | number)[][] = respostas.map((r) => [
-    fmtDataHora(r.created),
-    rotuloContato(r),
-    r.nota,
-    r.classificacao,
-  ])
-  if (linhasResp.length === 0) texto('Sem respostas no período.', 9, CINZA)
-  else {
-    autoTabela(
-      doc,
-      ['Data', 'Respondente', 'Nota', 'Classificação'],
-      linhasResp,
-      larguraUtil,
-      margem,
-      () => (y = margem + 40),
-    )
-    y += 10
-  }
-
-  // Detratores e tratativa
-  if (y > alturaPag - 120) {
-    doc.addPage()
-    y = margem
-  }
-  texto('Detratores (0–6) e tratativa', 11, [15, 23, 42], true)
-  pular(2)
-  const det = respostas.filter((r) => r.nota <= 6)
-  const linhasDet: string[][] = det.map((r) => [
-    fmtDataHora(r.created),
-    rotuloContato(r),
-    String(r.nota),
-    (r.justificativa_detrator || '—').slice(0, 140),
-    (r.comentario || '—').slice(0, 140),
-    r.tratado ? 'Sim' : 'Não',
-  ])
-  if (linhasDet.length === 0) texto('Sem detratores no período.', 9, CINZA)
-  else
-    autoTabela(
-      doc,
-      ['Data', 'Respondente', 'Nota', 'Justificativa', 'Comentário', 'Tratado'],
-      linhasDet,
-      larguraUtil,
-      margem,
-      () => (y = margem + 40),
-    )
-
-  // Rodapé
-  doc.setFont('helvetica', 'normal')
-  doc.setFontSize(8)
-  doc.setTextColor(148, 163, 184)
-  doc.text(
-    `Gerado pelo painel NPS Fundatec em ${fmtDataHora(new Date().toISOString())} — respostas anônimas não expõem nome nem e-mail.`,
-    margem,
-    alturaPag - 24,
-  )
-
-  const slug = campanha.slug || 'campanha'
-  doc.save(`relatorio-nps-${slug}-${periodo.de}-${periodo.ate}.pdf`)
+  // popup bloqueado: imprime por iframe oculto (mesmo resultado)
+  imprimirViaIframe(html)
 }
 
-// Tabela simples em múltiplas páginas (sem dependência externa).
-function autoTabela(
-  doc: import('jspdf').jsPDF,
-  cabecalho: string[],
-  linhas: (string | number)[][],
-  larguraUtil: number,
-  x: number,
-  novaPag: () => void,
-): void {
-  const colW = larguraUtil / cabecalho.length
-  const desenharLinha = (cells: (string | number)[], negrito: boolean, fundo: boolean): number => {
-    let maxLins = 1
-    const porCol: string[][] = []
-    doc.setFont('helvetica', negrito ? 'bold' : 'normal')
-    doc.setFontSize(8)
-    cells.forEach((c, i) => {
-      const t = doc.splitTextToSize(String(c ?? ''), colW - 8) as string[]
-      porCol.push(t)
-      maxLins = Math.max(maxLins, t.length)
+function imprimirViaIframe(html: string): void {
+  const iframe = document.createElement('iframe')
+  iframe.style.position = 'fixed'
+  iframe.style.right = '0'
+  iframe.style.bottom = '0'
+  iframe.style.width = '0'
+  iframe.style.height = '0'
+  iframe.style.border = '0'
+  document.body.appendChild(iframe)
+  const janela = iframe.contentWindow
+  if (!janela) {
+    document.body.removeChild(iframe)
+    throw new Error('Não foi possível abrir a janela de impressão.')
+  }
+  janela.document.open()
+  janela.document.write(html)
+  janela.document.close()
+  janela.focus()
+  janela.print()
+  setTimeout(() => iframe.remove(), 60_000)
+}
+
+function barraDistribuicao(d: ReturnType<typeof calcularNps>): string {
+  const max = Math.max(1, ...d.counts)
+  const celulas = d.counts
+    .map((qtd, nota) => {
+      const altura = Math.round((qtd / max) * 60)
+      const cor = corFaixa[faixaDaNota(nota)]
+      return `<td class="col">
+        <div class="barra-wrap">
+          <div class="barra" style="height:${Math.max(altura, qtd > 0 ? 2 : 0)}px;background:${cor}"></div>
+        </div>
+        <div class="nota">${nota}</div>
+        <div class="qtd">${qtd}</div>
+      </td>`
     })
-    const hLinha = 12 + (maxLins - 1) * 9
-    if (fundo) {
-      doc.setFillColor(241, 245, 249)
-      doc.rect(x, y - 9, larguraUtil, hLinha + 4, 'F')
-    }
-    porCol.forEach((t, i) => {
-      doc.setTextColor(30, 41, 59)
-      t.forEach((linha, j) => doc.text(linha, x + i * colW + 4, y + j * 9))
-    })
-    return hLinha
+    .join('')
+  return `<table class="barras"><tr>${celulas}</tr></table>
+    <p class="legenda">
+      <span class="dot" style="background:${corFaixa.detrator}"></span> Detrator (0–6)
+      <span class="dot" style="background:${corFaixa.neutro}"></span> Neutro (7–8)
+      <span class="dot" style="background:${corFaixa.promotor}"></span> Promotor (9–10)
+    </p>`
+}
+
+function relatorioHtml(
+  campanha: Campaign,
+  respostas: SurveyResponse[],
+  periodo: { de: string; ate: string },
+  d: ReturnType<typeof calcularNps>,
+  tratados: number,
+): string {
+  const linhaResposta = (r: SurveyResponse): string => `
+    <tr>
+      <td>${escHtml(fmtDataHora(r.created))}</td>
+      <td>${escHtml(rotuloContato(r))}</td>
+      <td class="b">${r.nota}</td>
+      <td>${escHtml(r.classificacao)}</td>
+      <td>${escHtml(r.comentario || '—')}</td>
+    </tr>`
+
+  const linhaDetrator = (r: SurveyResponse): string => `
+    <tr>
+      <td>${escHtml(fmtDataHora(r.created))}</td>
+      <td>${escHtml(rotuloContato(r))}</td>
+      <td class="b">${r.nota}</td>
+      <td>${escHtml(r.justificativa_detrator || '—')}</td>
+      <td>${escHtml(r.comentario || '—')}</td>
+      <td>${r.tratado ? 'Sim' : 'Não'}</td>
+      <td>${escHtml(r.nota_interna || '—')}</td>
+    </tr>`
+
+  const det = respostas.filter((r) => r.nota <= 6)
+
+  return `<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8" />
+<title>Relatório NPS — ${escHtml(campanha.nome)}</title>
+<style>
+  * { box-sizing: border-box; }
+  body { font-family: Arial, Helvetica, sans-serif; color: #1e293b; margin: 32px; font-size: 12px; }
+  .cabecalho { background: #075985; color: #fff; padding: 18px 24px; border-radius: 8px; margin-bottom: 24px; }
+  .cabecalho h1 { margin: 0; font-size: 20px; }
+  .cabecalho p { margin: 4px 0 0; font-size: 11px; opacity: .85; }
+  h2 { font-size: 14px; margin: 22px 0 8px; color: #0f172a; }
+  table { border-collapse: collapse; width: 100%; margin-bottom: 8px; }
+  th, td { border: 1px solid #e2e8f0; padding: 5px 8px; text-align: left; vertical-align: top; }
+  th { background: #f1f5f9; font-size: 10px; text-transform: uppercase; letter-spacing: .03em; }
+  td.b { font-weight: bold; }
+  .kpis td { border: none; padding: 2px 14px 2px 0; }
+  .kpis .rotulo { color: #64748b; font-size: 10px; text-transform: uppercase; }
+  .kpis .valor { font-size: 15px; font-weight: bold; }
+  .barras { width: auto; border: none; margin: 12px 0 4px; }
+  .barras td { border: none; padding: 0 7px; text-align: center; }
+  .barra-wrap { height: 62px; display: flex; align-items: flex-end; justify-content: center; }
+  .barra { width: 26px; border-radius: 3px 3px 0 0; }
+  .nota { font-size: 10px; color: #64748b; margin-top: 3px; }
+  .qtd { font-size: 10px; font-weight: bold; color: #334155; }
+  .legenda { font-size: 10px; color: #64748b; margin: 6px 0 0; }
+  .dot { display: inline-block; width: 9px; height: 9px; border-radius: 2px; margin: 0 4px 0 10px; vertical-align: middle; }
+  .rodape { margin-top: 28px; font-size: 9px; color: #94a3b8; }
+  .vazio { color: #94a3b8; font-style: italic; }
+  @media print {
+    body { margin: 12mm; }
+    .cabecalho { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+    .barra { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+  }
+</style>
+</head>
+<body>
+  <div class="cabecalho">
+    <h1>Fundatec — Relatório NPS</h1>
+    <p>Pesquisa de Satisfação</p>
+  </div>
+
+  <p><strong>Campanha:</strong> ${escHtml(campanha.nome)}<br />
+  <strong>Área:</strong> ${escHtml(campanha.area_nome || campanha.expand?.area_id?.nome || '—')} &nbsp;·&nbsp;
+  <strong>Período:</strong> ${periodo.de} a ${periodo.ate}<br />
+  <strong>Pergunta NPS:</strong> ${escHtml(campanha.pergunta_nps)}</p>
+
+  <h2>KPIs do período</h2>
+  <table class="kpis">
+    <tr>
+      <td><div class="rotulo">Respostas</div><div class="valor">${d.total}</div></td>
+      <td><div class="rotulo">Promotores (9–10)</div><div class="valor">${d.promotores} (${d.pctPromotores}%)</div></td>
+      <td><div class="rotulo">Neutros (7–8)</div><div class="valor">${d.neutros} (${d.pctNeutros}%)</div></td>
+      <td><div class="rotulo">Detratores (0–6)</div><div class="valor">${d.detratores} (${d.pctDetratores}%)</div></td>
+      <td><div class="rotulo">NPS</div><div class="valor">${d.nps === null ? '—' : d.nps}</div></td>
+      <td><div class="rotulo">Tratados</div><div class="valor">${tratados}</div></td>
+    </tr>
+  </table>
+  <p class="legenda">${escHtml(formulaNps(d))}</p>
+
+  <h2>Distribuição de notas (0–10)</h2>
+  ${d.total === 0 ? '<p class="vazio">Sem respostas no período.</p>' : barraDistribuicao(d)}
+
+  <h2>Respostas do período</h2>
+  ${
+    respostas.length === 0
+      ? '<p class="vazio">Sem respostas no período.</p>'
+      : `<table><thead><tr><th>Data</th><th>Respondente</th><th>Nota</th><th>Classificação</th><th>Comentário</th></tr></thead>
+         <tbody>${respostas.map(linhaResposta).join('')}</tbody></table>`
   }
 
-  y += desenharLinha(cabecalho, true, true) + 2
-  for (const l of linhas) {
-    const h = desenharLinha(l, false, false) + 2
-    y += h
-    if (y > doc.internal.pageSize.getHeight() - 60) {
-      doc.addPage()
-      novaPag()
-      y += desenharLinha(cabecalho, true, true) + 2
-    }
+  <h2>Detratores (0–6) e tratativa</h2>
+  ${
+    det.length === 0
+      ? '<p class="vazio">Sem detratores no período.</p>'
+      : `<table><thead><tr><th>Data</th><th>Respondente</th><th>Nota</th><th>Justificativa</th><th>Comentário</th><th>Tratado</th><th>Nota interna</th></tr></thead>
+         <tbody>${det.map(linhaDetrator).join('')}</tbody></table>`
   }
+
+  <p class="rodape">Gerado pelo painel NPS Fundatec em ${escHtml(
+    fmtDataHora(new Date().toISOString()),
+  )} — respostas anônimas não expõem nome nem e-mail.</p>
+</body>
+</html>`
 }
