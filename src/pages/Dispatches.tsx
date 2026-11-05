@@ -30,8 +30,10 @@ import {
   Loader2,
   Filter,
   MailCheck,
+  ShieldAlert,
 } from 'lucide-react'
 import { useToast } from '@/hooks/use-toast'
+import { usePermissions } from '@/hooks/use-permissions'
 
 export default function DispatchesPage() {
   const [dispatches, setDispatches] = useState<Dispatch[]>([])
@@ -42,6 +44,7 @@ export default function DispatchesPage() {
   const [isResendingAll, setIsResendingAll] = useState(false)
 
   const { toast } = useToast()
+  const { canSendInvites, isLeitura } = usePermissions()
 
   const loadData = async () => {
     setIsLoading(true)
@@ -123,23 +126,33 @@ export default function DispatchesPage() {
           </p>
         </div>
 
-        <Button
-          onClick={handleResendToPending}
-          disabled={isResendingAll || participants.filter((p) => !p.respondido).length === 0}
-          className="bg-sky-600 hover:bg-sky-700 text-xs shrink-0"
-        >
-          {isResendingAll ? (
-            <>
-              <Loader2 className="w-3.5 h-3.5 mr-1.5 animate-spin" />
-              Reenviando...
-            </>
-          ) : (
-            <>
-              <RotateCcw className="w-3.5 h-3.5 mr-1.5" />
-              Reenviar a Pendentes ({participants.filter((p) => !p.respondido).length})
-            </>
-          )}
-        </Button>
+        {canSendInvites ? (
+          <Button
+            onClick={handleResendToPending}
+            disabled={isResendingAll || participants.filter((p) => !p.respondido).length === 0}
+            className="bg-sky-600 hover:bg-sky-700 text-xs shrink-0"
+          >
+            {isResendingAll ? (
+              <>
+                <Loader2 className="w-3.5 h-3.5 mr-1.5 animate-spin" />
+                Reenviando...
+              </>
+            ) : (
+              <>
+                <RotateCcw className="w-3.5 h-3.5 mr-1.5" />
+                Reenviar a Pendentes ({participants.filter((p) => !p.respondido).length})
+              </>
+            )}
+          </Button>
+        ) : (
+          <Badge
+            variant="outline"
+            className="bg-slate-50 text-slate-600 border-slate-200 text-xs gap-1.5 py-1.5 px-3 shrink-0"
+          >
+            <ShieldAlert className="w-3.5 h-3.5 text-slate-400" />
+            Acesso de {isLeitura ? 'somente leitura' : 'consulta'} — sem ações de disparo
+          </Badge>
+        )}
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">

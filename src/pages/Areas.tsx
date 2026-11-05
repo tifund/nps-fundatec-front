@@ -23,8 +23,9 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog'
-import { Plus, Edit2, Layers, Loader2, CheckCircle2, XCircle } from 'lucide-react'
+import { Plus, Edit2, Layers, Loader2, CheckCircle2, XCircle, ShieldAlert } from 'lucide-react'
 import { useToast } from '@/hooks/use-toast'
+import { usePermissions } from '@/hooks/use-permissions'
 
 export default function AreasPage() {
   const [areas, setAreas] = useState<Area[]>([])
@@ -36,6 +37,7 @@ export default function AreasPage() {
   const [ativa, setAtiva] = useState(true)
 
   const { toast } = useToast()
+  const { canManageAreas, isLeitura } = usePermissions()
 
   const loadAreas = async () => {
     setIsLoading(true)
@@ -129,10 +131,20 @@ export default function AreasPage() {
             Cadastre e gerencie as áreas da Fundatec que realizam pesquisas de satisfação.
           </p>
         </div>
-        <Button onClick={handleOpenCreate} className="bg-sky-600 hover:bg-sky-700 shrink-0">
-          <Plus className="w-4 h-4 mr-2" />
-          Nova Área
-        </Button>
+        {canManageAreas ? (
+          <Button onClick={handleOpenCreate} className="bg-sky-600 hover:bg-sky-700 shrink-0">
+            <Plus className="w-4 h-4 mr-2" />
+            Nova Área
+          </Button>
+        ) : (
+          <Badge
+            variant="outline"
+            className="bg-slate-50 text-slate-600 border-slate-200 text-xs shrink-0 gap-1.5 py-1.5 px-3"
+          >
+            <ShieldAlert className="w-3.5 h-3.5 text-slate-400" />
+            Acesso de {isLeitura ? 'somente leitura' : 'consulta'} — sem ações de escrita
+          </Badge>
+        )}
       </div>
 
       <Card className="border-slate-200 shadow-sm bg-white">
@@ -201,25 +213,31 @@ export default function AreasPage() {
                     <TableCell className="text-xs text-slate-500">
                       {new Date(area.created).toLocaleDateString('pt-BR')}
                     </TableCell>
-                    <TableCell className="text-right space-x-1">
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        onClick={() => handleToggle(area)}
-                        title={area.ativa ? 'Desativar área' : 'Ativar área'}
-                        className="text-xs h-8 text-slate-600 hover:text-slate-900"
-                      >
-                        {area.ativa ? 'Desativar' : 'Ativar'}
-                      </Button>
-                      <Button
-                        variant="outline"
-                        size="icon"
-                        className="h-8 w-8 text-slate-600 hover:text-sky-600"
-                        onClick={() => handleOpenEdit(area)}
-                        title="Editar nome"
-                      >
-                        <Edit2 className="w-3.5 h-3.5" />
-                      </Button>
+                    <TableCell className="text-right">
+                      {canManageAreas ? (
+                        <span className="space-x-1">
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => handleToggle(area)}
+                            title={area.ativa ? 'Desativar área' : 'Ativar área'}
+                            className="text-xs h-8 text-slate-600 hover:text-slate-900"
+                          >
+                            {area.ativa ? 'Desativar' : 'Ativar'}
+                          </Button>
+                          <Button
+                            variant="outline"
+                            size="icon"
+                            className="h-8 w-8 text-slate-600 hover:text-sky-600"
+                            onClick={() => handleOpenEdit(area)}
+                            title="Editar nome"
+                          >
+                            <Edit2 className="w-3.5 h-3.5" />
+                          </Button>
+                        </span>
+                      ) : (
+                        <span className="text-[11px] text-slate-400">—</span>
+                      )}
                     </TableCell>
                   </TableRow>
                 ))}

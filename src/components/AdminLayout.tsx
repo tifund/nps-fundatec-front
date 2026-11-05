@@ -1,6 +1,7 @@
 import React from 'react'
 import { Link, useLocation, useNavigate } from 'react-router-dom'
 import { useAuth } from '@/hooks/use-auth'
+import { usePermissions } from '@/hooks/use-permissions'
 import {
   BarChart3,
   Layers,
@@ -10,7 +11,7 @@ import {
   LogOut,
   Menu,
   ExternalLink,
-  ShieldCheck,
+  UserCog,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Sheet, SheetContent, SheetTrigger } from '@/components/ui/sheet'
@@ -20,22 +21,42 @@ interface AdminLayoutProps {
   children: React.ReactNode
 }
 
+const perfilLabel: Record<string, string> = {
+  admin: 'ADMIN',
+  gestor: 'GESTOR',
+  leitura: 'LEITURA',
+}
+
+const perfilBadgeClass: Record<string, string> = {
+  admin: 'bg-sky-50 text-sky-700 border-sky-200',
+  gestor: 'bg-amber-50 text-amber-700 border-amber-200',
+  leitura: 'bg-slate-100 text-slate-600 border-slate-200',
+}
+
 export default function AdminLayout({ children }: AdminLayoutProps) {
   const { user, signOut } = useAuth()
+  const { perfil, canManageAreas, canManageCampaigns, canManageUsers } = usePermissions()
   const location = useLocation()
   const navigate = useNavigate()
   const [mobileOpen, setMobileOpen] = React.useState(false)
 
-  const navItems = [
-    { title: 'Dashboard NPS', href: '/admin', icon: BarChart3 },
-    { title: 'Áreas de Negócio', href: '/admin/areas', icon: Layers },
-    { title: 'Campanhas', href: '/admin/campanhas', icon: Megaphone },
-    { title: 'Participantes', href: '/admin/participantes', icon: Users },
-    { title: 'Envios de Convites', href: '/admin/envios', icon: Send },
+  const allNavItems = [
+    { title: 'Dashboard NPS', href: '/admin', icon: BarChart3, show: true },
+    { title: 'Áreas de Negócio', href: '/admin/areas', icon: Layers, show: true },
+    { title: 'Campanhas', href: '/admin/campanhas', icon: Megaphone, show: true },
+    { title: 'Participantes', href: '/admin/participantes', icon: Users, show: true },
+    { title: 'Envios de Convites', href: '/admin/envios', icon: Send, show: true },
+    {
+      title: 'Usuários do Sistema',
+      href: '/admin/usuarios',
+      icon: UserCog,
+      show: canManageUsers,
+    },
   ]
+  const navItems = allNavItems.filter((i) => i.show)
 
   const handleLogout = () => {
-    signOut()
+    signOut('manual')
     navigate('/login')
   }
 
@@ -73,7 +94,7 @@ export default function AdminLayout({ children }: AdminLayoutProps) {
       <aside className="hidden md:flex md:w-64 flex-col bg-white border-r border-slate-200 shadow-sm shrink-0">
         <div className="p-5 border-b border-slate-100 flex items-center justify-between">
           <div className="flex items-center gap-2.5">
-            <div className="w-8 h-8 rounded-lg bg-sky-600 flex items-center justify-center text-white font-bold text-lg shadow-sm">
+            <div className="w-8 h-8 rounded-lg bg-sky-700 flex items-center justify-center text-white font-bold text-lg shadow-sm">
               F
             </div>
             <div>
@@ -83,8 +104,11 @@ export default function AdminLayout({ children }: AdminLayoutProps) {
               <p className="text-[11px] text-slate-500">Gestão de Satisfação</p>
             </div>
           </div>
-          <Badge variant="outline" className="text-[10px] bg-sky-50 text-sky-700 border-sky-200">
-            Admin
+          <Badge
+            variant="outline"
+            className={`text-[10px] ${perfilBadgeClass[perfil || 'leitura'] || perfilBadgeClass.leitura}`}
+          >
+            {perfilLabel[perfil || 'leitura']}
           </Badge>
         </div>
 
@@ -121,24 +145,23 @@ export default function AdminLayout({ children }: AdminLayoutProps) {
         <div className="p-4 border-t border-slate-100 bg-slate-50/50">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-2 overflow-hidden">
-              <div className="w-8 h-8 rounded-full bg-slate-200 flex items-center justify-center text-slate-700 text-xs font-semibold shrink-0">
+              <div className="w-8 h-8 rounded-full bg-sky-100 flex items-center justify-center text-sky-800 text-xs font-semibold shrink-0">
                 {user?.email?.charAt(0).toUpperCase() || 'A'}
               </div>
               <div className="truncate text-xs">
-                <p className="font-medium text-slate-800 truncate">
-                  {user?.name || 'Administrador'}
-                </p>
+                <p className="font-medium text-slate-800 truncate">{user?.name || 'Usuário'}</p>
                 <p className="text-slate-500 truncate text-[11px]">{user?.email}</p>
               </div>
             </div>
             <Button
               variant="ghost"
-              size="icon"
+              size="sm"
               onClick={handleLogout}
               title="Sair do sistema"
-              className="text-slate-500 hover:text-rose-600 shrink-0"
+              className="text-slate-600 hover:text-rose-600 shrink-0 gap-1.5"
             >
               <LogOut className="w-4 h-4" />
+              Sair
             </Button>
           </div>
         </div>
@@ -147,7 +170,7 @@ export default function AdminLayout({ children }: AdminLayoutProps) {
       {/* Header Mobile */}
       <header className="md:hidden bg-white border-b border-slate-200 px-4 py-3 flex items-center justify-between shadow-sm sticky top-0 z-30">
         <div className="flex items-center gap-2">
-          <div className="w-7 h-7 rounded bg-sky-600 flex items-center justify-center text-white font-bold text-sm">
+          <div className="w-7 h-7 rounded bg-sky-700 flex items-center justify-center text-white font-bold text-sm">
             F
           </div>
           <span className="font-bold text-slate-800 text-sm">Fundatec NPS</span>
@@ -162,7 +185,7 @@ export default function AdminLayout({ children }: AdminLayoutProps) {
           <SheetContent side="left" className="w-64 p-4 flex flex-col justify-between">
             <div>
               <div className="flex items-center gap-2 pb-4 mb-4 border-b border-slate-100">
-                <div className="w-7 h-7 rounded bg-sky-600 flex items-center justify-center text-white font-bold text-sm">
+                <div className="w-7 h-7 rounded bg-sky-700 flex items-center justify-center text-white font-bold text-sm">
                   F
                 </div>
                 <span className="font-bold text-slate-800">Fundatec NPS</span>

@@ -3,6 +3,7 @@ import { getSurveyResponses, getSystemLogs } from '@/services/responses'
 import { getCampaigns } from '@/services/campaigns'
 import { SurveyResponse, Campaign, SystemLog } from '@/types/nps'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
+import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import {
   Select,
@@ -32,6 +33,8 @@ import {
   Loader2,
 } from 'lucide-react'
 import { useToast } from '@/hooks/use-toast'
+import { usePermissions } from '@/hooks/use-permissions'
+import { Download } from 'lucide-react'
 
 export default function DashboardPage() {
   const [campaigns, setCampaigns] = useState<Campaign[]>([])
@@ -41,6 +44,7 @@ export default function DashboardPage() {
   const [isLoading, setIsLoading] = useState(true)
 
   const { toast } = useToast()
+  const { canExport } = usePermissions()
 
   const loadData = async () => {
     setIsLoading(true)
@@ -87,6 +91,48 @@ export default function DashboardPage() {
   // Lista de comentários recebidos
   const comentarios = responses.filter((r) => r.comentario && r.comentario.trim().length > 0)
 
+  // Exportação CSV das respostas filtradas (disponível a todos os perfis, inclusive LEITURA)
+  const exportCsv = () => {
+    const header = [
+      'id',
+      'campanha',
+      'participante',
+      'nota',
+      'classificacao',
+      'justificativa_detrator',
+      'comentario',
+      'anonimo',
+      'data',
+    ]
+    const escape = (v: unknown) => {
+      const s = v === null || v === undefined ? '' : String(v)
+      return `"${s.replace(/"/g, '""')}"`
+    }
+    const linhas = responses.map((r) =>
+      [
+        r.id,
+        r.expand?.campaign_id?.nome || '',
+        r.anonimo ? 'Anônimo' : r.expand?.participant_id?.nome || '',
+        r.nota,
+        r.classificacao,
+        r.justificativa_detrator || '',
+        r.comentario || '',
+        r.anonimo ? 'sim' : 'não',
+        new Date(r.created).toLocaleString('pt-BR'),
+      ]
+        .map(escape)
+        .join(';'),
+    )
+    const csv = [header.join(';'), ...linhas].join('\n')
+    const blob = new Blob(['\ufeff' + csv], { type: 'text/csv;charset=utf-8;' })
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = `relatorio-nps-${new Date().toISOString().slice(0, 10)}.csv`
+    a.click()
+    URL.revokeObjectURL(url)
+  }
+
   const getNpsColor = (score: number) => {
     if (score >= 50) return 'text-emerald-600 bg-emerald-50 border-emerald-200'
     if (score >= 0) return 'text-amber-600 bg-amber-50 border-amber-200'
@@ -111,6 +157,19 @@ export default function DashboardPage() {
         </div>
 
         <div className="flex items-center gap-2">
+          {canExport && (
+            <Button
+              variant="outline"
+              size="sm"
+              className="h-9 text-xs text-slate-700 hover:text-sky-700 border-slate-200"
+              onClick={exportCsv}
+              disabled={responses.length === 0}
+              title="Exportar relatório CSV das respostas filtradas"
+            >
+              <Download className="w-3.5 h-3.5 mr-1.5" />
+              Exportar CSV
+            </Button>
+          )}
           <Filter className="w-4 h-4 text-slate-400 shrink-0" />
           <Select value={selectedCampaignId} onValueChange={setSelectedCampaignId}>
             <SelectTrigger className="w-64 text-xs h-9 bg-white">

@@ -46,8 +46,10 @@ import {
   CheckCircle2,
   Clock,
   Filter,
+  ShieldAlert,
 } from 'lucide-react'
 import { useToast } from '@/hooks/use-toast'
+import { usePermissions } from '@/hooks/use-permissions'
 
 export default function ParticipantsPage() {
   const [participants, setParticipants] = useState<Participant[]>([])
@@ -72,6 +74,7 @@ export default function ParticipantsPage() {
   const [sendingId, setSendingId] = useState<string | null>(null)
 
   const { toast } = useToast()
+  const { canManageParticipants, canSendInvites, isLeitura } = usePermissions()
 
   const loadData = async () => {
     setIsLoading(true)
@@ -257,14 +260,26 @@ export default function ParticipantsPage() {
         </div>
 
         <div className="flex items-center gap-2 shrink-0">
-          <Button variant="outline" onClick={handleOpenBatch} className="text-xs">
-            <Upload className="w-3.5 h-3.5 mr-1.5" />
-            Importar em Lote
-          </Button>
-          <Button onClick={handleOpenSingle} className="bg-sky-600 hover:bg-sky-700 text-xs">
-            <UserPlus className="w-3.5 h-3.5 mr-1.5" />
-            Novo Participante
-          </Button>
+          {canManageParticipants ? (
+            <>
+              <Button variant="outline" onClick={handleOpenBatch} className="text-xs">
+                <Upload className="w-3.5 h-3.5 mr-1.5" />
+                Importar em Lote
+              </Button>
+              <Button onClick={handleOpenSingle} className="bg-sky-600 hover:bg-sky-700 text-xs">
+                <UserPlus className="w-3.5 h-3.5 mr-1.5" />
+                Novo Participante
+              </Button>
+            </>
+          ) : (
+            <Badge
+              variant="outline"
+              className="bg-slate-50 text-slate-600 border-slate-200 text-xs gap-1.5 py-1.5 px-3"
+            >
+              <ShieldAlert className="w-3.5 h-3.5 text-slate-400" />
+              Acesso de {isLeitura ? 'somente leitura' : 'consulta'} — sem ações de escrita
+            </Badge>
+          )}
         </div>
       </div>
 
@@ -378,7 +393,7 @@ export default function ParticipantsPage() {
                           Copiar Link
                         </Button>
 
-                        {!p.respondido ? (
+                        {canSendInvites && !p.respondido ? (
                           <Button
                             variant="default"
                             size="sm"
@@ -395,7 +410,9 @@ export default function ParticipantsPage() {
                             Enviar Convite
                           </Button>
                         ) : (
-                          <span className="text-[11px] text-slate-400 italic px-2">Finalizado</span>
+                          <span className="text-[11px] text-slate-400 italic px-2">
+                            {p.respondido ? 'Finalizado' : '—'}
+                          </span>
                         )}
                       </TableCell>
                     </TableRow>

@@ -1,15 +1,15 @@
 {
-  "generatedAt": "2026-11-05T02:15:20.807Z",
+  "generatedAt": "2026-11-05T03:12:18.783Z",
   "collections": [
     {
       "name": "users",
       "type": "auth",
       "apiRules": {
-        "list": "@request.auth.id != ''",
-        "view": "@request.auth.id != ''",
-        "create": "id = ''",
-        "update": "@request.auth.id != '' && id = @request.auth.id && @request.body.name:changed = false && @request.body.avatar:changed = false",
-        "delete": "id = ''"
+        "list": "@request.auth.perfil = 'admin'",
+        "view": "@request.auth.perfil = 'admin' || id = @request.auth.id",
+        "create": "@request.auth.perfil = 'admin'",
+        "update": "@request.auth.perfil = 'admin' || (id = @request.auth.id && @request.body.perfil:changed = false && @request.body.name:changed = false && @request.body.avatar:changed = false && @request.body.email:changed = false && @request.body.verified:changed = false)",
+        "delete": "@request.auth.perfil = 'admin'"
       },
       "fields": [
         {
@@ -37,6 +37,19 @@
           "required": false,
           "system": false,
           "autodateTriggers": ["onCreate", "onUpdate"]
+        },
+        {
+          "name": "perfil",
+          "type": "select",
+          "required": true,
+          "system": false,
+          "selectValues": ["admin", "gestor", "leitura"]
+        },
+        {
+          "name": "precisa_trocar_senha",
+          "type": "bool",
+          "required": false,
+          "system": false
         }
       ],
       "indexes": [
@@ -50,9 +63,9 @@
       "apiRules": {
         "list": "@request.auth.id != ''",
         "view": "@request.auth.id != ''",
-        "create": "@request.auth.id != ''",
-        "update": "@request.auth.id != ''",
-        "delete": "@request.auth.id != ''"
+        "create": "@request.auth.perfil = 'admin'",
+        "update": "@request.auth.perfil = 'admin'",
+        "delete": "@request.auth.perfil = 'admin'"
       },
       "fields": [
         {
@@ -90,9 +103,9 @@
       "apiRules": {
         "list": "@request.auth.id != ''",
         "view": "@request.auth.id != ''",
-        "create": "@request.auth.id != ''",
-        "update": "@request.auth.id != ''",
-        "delete": "@request.auth.id != ''"
+        "create": "(@request.auth.perfil = 'admin' || @request.auth.perfil = 'gestor')",
+        "update": "(@request.auth.perfil = 'admin' || @request.auth.perfil = 'gestor')",
+        "delete": "@request.auth.perfil = 'admin'"
       },
       "fields": [
         {
@@ -179,9 +192,9 @@
       "apiRules": {
         "list": "@request.auth.id != ''",
         "view": "@request.auth.id != ''",
-        "create": "@request.auth.id != ''",
-        "update": "@request.auth.id != ''",
-        "delete": "@request.auth.id != ''"
+        "create": "(@request.auth.perfil = 'admin' || @request.auth.perfil = 'gestor')",
+        "update": "(@request.auth.perfil = 'admin' || @request.auth.perfil = 'gestor')",
+        "delete": "@request.auth.perfil = 'admin'"
       },
       "fields": [
         {
@@ -239,9 +252,9 @@
       "apiRules": {
         "list": "@request.auth.id != ''",
         "view": "@request.auth.id != ''",
-        "create": "@request.auth.id != ''",
-        "update": "@request.auth.id != ''",
-        "delete": "@request.auth.id != ''"
+        "create": "(@request.auth.perfil = 'admin' || @request.auth.perfil = 'gestor')",
+        "update": "(@request.auth.perfil = 'admin' || @request.auth.perfil = 'gestor')",
+        "delete": "@request.auth.perfil = 'admin'"
       },
       "fields": [
         {
@@ -307,9 +320,9 @@
       "apiRules": {
         "list": "@request.auth.id != ''",
         "view": "@request.auth.id != ''",
-        "create": "@request.auth.id != ''",
-        "update": "@request.auth.id != ''",
-        "delete": "@request.auth.id != ''"
+        "create": "(@request.auth.perfil = 'admin' || @request.auth.perfil = 'gestor')",
+        "update": "(@request.auth.perfil = 'admin' || @request.auth.perfil = 'gestor')",
+        "delete": "@request.auth.perfil = 'admin'"
       },
       "fields": [
         {
@@ -375,9 +388,9 @@
       "apiRules": {
         "list": "@request.auth.id != ''",
         "view": "@request.auth.id != ''",
-        "create": "@request.body.nota >= 0 && @request.body.nota <= 10 && @request.body.classificacao != ''",
-        "update": "@request.auth.id != ''",
-        "delete": "@request.auth.id != ''"
+        "create": "@request.auth.id = '' && @request.body.nota >= 0 && @request.body.nota <= 10 && @request.body.classificacao != '' || (@request.auth.perfil = 'admin' || @request.auth.perfil = 'gestor')",
+        "update": "(@request.auth.perfil = 'admin' || @request.auth.perfil = 'gestor')",
+        "delete": "(@request.auth.perfil = 'admin' || @request.auth.perfil = 'gestor')"
       },
       "fields": [
         {
@@ -456,9 +469,9 @@
       "apiRules": {
         "list": "@request.auth.id != ''",
         "view": "@request.auth.id != ''",
-        "create": "@request.auth.id != ''",
-        "update": "@request.auth.id != ''",
-        "delete": "@request.auth.id != ''"
+        "create": "@request.auth.perfil = 'admin'",
+        "update": "@request.auth.perfil = 'admin'",
+        "delete": "@request.auth.perfil = 'admin'"
       },
       "fields": [
         {

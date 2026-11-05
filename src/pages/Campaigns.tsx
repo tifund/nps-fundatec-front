@@ -50,8 +50,10 @@ import {
   Trash2,
   Lock,
   Calendar,
+  ShieldAlert,
 } from 'lucide-react'
 import { useToast } from '@/hooks/use-toast'
+import { usePermissions } from '@/hooks/use-permissions'
 
 export default function CampaignsPage() {
   const [campaigns, setCampaigns] = useState<Campaign[]>([])
@@ -90,6 +92,7 @@ export default function CampaignsPage() {
   const [novaObrigatoria, setNovaObrigatoria] = useState(false)
 
   const { toast } = useToast()
+  const { canManageCampaigns, isLeitura } = usePermissions()
 
   const loadData = async () => {
     setIsLoading(true)
@@ -309,10 +312,20 @@ export default function CampaignsPage() {
             Crie, configure regras de justificativa e gerencie as pesquisas da Fundatec.
           </p>
         </div>
-        <Button onClick={handleOpenCreate} className="bg-sky-600 hover:bg-sky-700 shrink-0">
-          <Plus className="w-4 h-4 mr-2" />
-          Nova Campanha
-        </Button>
+        {canManageCampaigns ? (
+          <Button onClick={handleOpenCreate} className="bg-sky-600 hover:bg-sky-700 shrink-0">
+            <Plus className="w-4 h-4 mr-2" />
+            Nova Campanha
+          </Button>
+        ) : (
+          <Badge
+            variant="outline"
+            className="bg-slate-50 text-slate-600 border-slate-200 text-xs shrink-0 gap-1.5 py-1.5 px-3"
+          >
+            <ShieldAlert className="w-3.5 h-3.5 text-slate-400" />
+            Acesso de {isLeitura ? 'somente leitura' : 'consulta'} — sem ações de escrita
+          </Badge>
+        )}
       </div>
 
       <Card className="border-slate-200 shadow-sm bg-white">
@@ -421,35 +434,39 @@ export default function CampaignsPage() {
                             Copiar Link
                           </Button>
                         )}
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          className="h-8 text-xs text-slate-600 hover:text-slate-900"
-                          onClick={() => handleOpenQuestions(camp)}
-                          title="Perguntas Adicionais"
-                        >
-                          <HelpCircle className="w-3.5 h-3.5 mr-1" />
-                          Perguntas
-                        </Button>
-                        <Button
-                          variant="outline"
-                          size="icon"
-                          className="h-8 w-8 text-slate-600 hover:text-sky-600"
-                          onClick={() => handleOpenEdit(camp)}
-                          title="Editar Campanha"
-                        >
-                          <Edit2 className="w-3.5 h-3.5" />
-                        </Button>
-                        {statusFinal === 'ativa' && (
-                          <Button
-                            variant="ghost"
-                            size="icon"
-                            className="h-8 w-8 text-slate-400 hover:text-rose-600"
-                            onClick={() => handleCloseCampaign(camp)}
-                            title="Encerrar Campanha Manualmente"
-                          >
-                            <Lock className="w-3.5 h-3.5" />
-                          </Button>
+                        {canManageCampaigns && (
+                          <>
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              className="h-8 text-xs text-slate-600 hover:text-slate-900"
+                              onClick={() => handleOpenQuestions(camp)}
+                              title="Perguntas Adicionais"
+                            >
+                              <HelpCircle className="w-3.5 h-3.5 mr-1" />
+                              Perguntas
+                            </Button>
+                            <Button
+                              variant="outline"
+                              size="icon"
+                              className="h-8 w-8 text-slate-600 hover:text-sky-600"
+                              onClick={() => handleOpenEdit(camp)}
+                              title="Editar Campanha"
+                            >
+                              <Edit2 className="w-3.5 h-3.5" />
+                            </Button>
+                            {statusFinal === 'ativa' && (
+                              <Button
+                                variant="ghost"
+                                size="icon"
+                                className="h-8 w-8 text-slate-400 hover:text-rose-600"
+                                onClick={() => handleCloseCampaign(camp)}
+                                title="Encerrar Campanha Manualmente"
+                              >
+                                <Lock className="w-3.5 h-3.5" />
+                              </Button>
+                            )}
+                          </>
                         )}
                       </TableCell>
                     </TableRow>

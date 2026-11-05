@@ -3,7 +3,7 @@ import { Toaster } from '@/components/ui/toaster'
 import { Toaster as Sonner } from '@/components/ui/sonner'
 import { TooltipProvider } from '@/components/ui/tooltip'
 import { AuthProvider } from '@/hooks/use-auth'
-import ProtectedRoute from '@/components/ProtectedRoute'
+import ProtectedRoute, { RequirePerfil } from '@/components/ProtectedRoute'
 import AdminLayout from '@/components/AdminLayout'
 
 // Páginas Administrativas
@@ -13,6 +13,8 @@ import AreasPage from '@/pages/Areas'
 import CampaignsPage from '@/pages/Campaigns'
 import ParticipantsPage from '@/pages/Participants'
 import DispatchesPage from '@/pages/Dispatches'
+import UsersPage from '@/pages/Users'
+import ChangePassword from '@/pages/ChangePassword'
 
 // Página Pública de Avaliação
 import SurveyPage from '@/pages/Survey'
@@ -28,6 +30,7 @@ const App = () => (
         <Routes>
           {/* Rotas de Autenticação */}
           <Route path="/login" element={<Login />} />
+          <Route path="/trocar-senha" element={<ChangePassword />} />
 
           {/* Rotas Administrativas Protegidas */}
           <Route
@@ -76,6 +79,18 @@ const App = () => (
               <ProtectedRoute>
                 <AdminLayout>
                   <DispatchesPage />
+                </AdminLayout>
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/admin/usuarios"
+            element={
+              <ProtectedRoute>
+                <AdminLayout>
+                  <RequirePerfil perfis={['admin']}>
+                    <UsersPage />
+                  </RequirePerfil>
                 </AdminLayout>
               </ProtectedRoute>
             }
