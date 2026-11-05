@@ -4,9 +4,9 @@ import { Loader2, ShieldCheck, Send, PartyPopper } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Checkbox } from '@/components/ui/checkbox'
 import { Textarea } from '@/components/ui/textarea'
-import { Input } from '@/components/ui/input'
+
 import {
-  getSurveyContextByParams,
+  getSurveyContext,
   parseAvaliacaoParams,
   type ParametroAvaliacao,
 } from '@/services/surveyContext'
@@ -111,7 +111,7 @@ export function AvaliacaoPage() {
     }
 
     let ativo = true
-    getSurveyContextByParams(param)
+    getSurveyContext(param)
       .then((ctx) => {
         if (ativo) setContexto(ctx)
       })
@@ -147,10 +147,11 @@ export function AvaliacaoPage() {
     try {
       await submitSurveyResponse({
         campaign_id: campanha.id,
-        // No link aberto, ou com anonimato marcado, a resposta não carrega vínculo.
-        participant_id: participante && !anonimo ? participante.id : '',
+        // Convite individual: o token localiza o participante no hook server-side.
+        // Anonimato marcado (ou link aberto): resposta sem vínculo individual;
+        // o participante do convite continua contabilizado como respondido.
+        token: param.tipo === 'token' ? param.token : '',
         nota,
-        classificacao: nota <= 6 ? 'detrator' : nota <= 8 ? 'neutro' : 'promotor',
         comentario: comentario.trim(),
         justificativa_detrator: nota <= 6 && justificativa.trim() ? justificativa.trim() : '',
         anonimo: anonimo,
@@ -161,7 +162,9 @@ export function AvaliacaoPage() {
             if (valor === undefined || valor === null || valor === '') return null
             return { question_id: q.id, enunciado: q.enunciado, valor }
           })
-          .filter((v) => v !== null),
+          .filter((v): v is { question_id: string; enunciado: string; valor: string | number } =>
+            Boolean(v),
+          ),
       })
       setEnviado(true)
     } catch (err) {
@@ -171,6 +174,53 @@ export function AvaliacaoPage() {
     } finally {
       setEnviando(false)
     }
+  }
+
+  // ---------- Estados de tela ----------
+
+  if (carregando) {
+    return (
+      <EstadoCentral>
+        <Loader2 className="w-8 h-8 text-sky-700 animate-spin" />
+        <p className="text-sm text-slate-500">Carregando avaliação…</p>
+      </EstadoCentral>
+    )
+  }
+
+  if (erroLink || !param || !contexto || !campanha) {
+    return (
+      <EstadoCentral>
+        <p className="text-lg font-medium text-slate-700">Link inválido ou expirado</p>
+      </EstadoCentral>
+    )
+  }
+
+  if (jaRespondido) {
+    return (
+      <EstadoCentral>
+        <p className="text-lg font-medium text-slate-700">
+          Esta avaliação já foi preenchida. Obrigado!
+        </p>
+      </EstadoCentral>
+    )
+  }
+
+  if (encerrada) {
+    return (
+      <EstadoCentral>
+        <p className="text-lg font-medium text-slate-700">Esta campanha está encerrada</p>
+      </EstadoCentral>
+    )
+  }
+
+  if (enviado) {
+    return (
+      <EstadoCentral>
+        <PartyPopper className="w-10 h-10 text-sky-700" />
+        <p className="text-lg font-semibold text-slate-800">Obrigado pela sua avaliação!</p>
+        <p className="text-sm text-slate-500">Sua opinião ajuda a Fundatec a melhorar.</p>
+      </EstadoCentral>
+    )
   }
 
   // ---------- Estados de tela ----------
@@ -248,7 +298,7 @@ export function AvaliacaoPage() {
           className="rounded-2xl border border-slate-200 bg-white p-5 sm:p-7 shadow-sm space-y-7"
           onSubmit={(e) => {
             e.preventDefault()
-            if (podeEnviar) enviar()
+            if (podeEnviar) void enviar()
           }}
         >
           {/* 1) Saudação */}
@@ -285,10 +335,6 @@ export function AvaliacaoPage() {
                 </p>
               ) : null}
             </div>
-          ) : campanha.justificativa_detrator === 'geral' && campanha.justificativa_geral ? (
-            <p className="rounded-lg bg-sky-50 border border-sky-100 px-4 py-3 text-sm text-sky-900">
-              {campanha.justificativa_geral}
-            </p>
           ) : null}
 
           {/* 4) Perguntas adicionais (todas opcionais na prática) */}
@@ -401,10 +447,8 @@ function EstadoCentral({ children }: { children: React.ReactNode }) {
     <div className="min-h-screen bg-gradient-to-b from-sky-50 via-white to-white flex items-center justify-center px-4">
       <div className="max-w-md w-full text-center rounded-2xl border border-slate-200 bg-white p-8 shadow-sm space-y-3">
         {children}
-        <p className="pt-2 text-xs text-slate-400">
-          <Link to="https://fundatec.org.br" className="hover:underline" asChild={false}>
-            Fundatec
-          </Link>
+        <p className="pt-2 text-[11px] text-slate-400">
+          Fundatec — Fundação Universidade Empresa de Tecnologia e Ciências
         </p>
       </div>
     </div>

@@ -18,6 +18,7 @@ import ChangePassword from '@/pages/ChangePassword'
 
 // Página Pública de Avaliação
 import SurveyPage from '@/pages/Survey'
+import { DashboardsPage } from '@/pages/DashboardsPage'
 
 import NotFound from '@/pages/NotFound'
 
@@ -39,6 +40,26 @@ const App = () => (
               <ProtectedRoute>
                 <AdminLayout>
                   <DashboardPage />
+                </AdminLayout>
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/admin/dashboard"
+            element={
+              <ProtectedRoute>
+                <AdminLayout>
+                  <DashboardsPage />
+                </AdminLayout>
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/admin/dashboard/:id"
+            element={
+              <ProtectedRoute>
+                <AdminLayout>
+                  <DashboardsPage />
                 </AdminLayout>
               </ProtectedRoute>
             }

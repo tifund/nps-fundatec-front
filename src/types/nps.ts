@@ -25,6 +25,7 @@ export interface Campaign {
   expand?: {
     area_id?: Area
   }
+  area_nome?: string
 }
 
 // Dados enviados ao criar/editar uma campanha (payload da tela "Campanhas")
@@ -119,6 +120,11 @@ export interface SurveyResponse {
   justificativa_detrator?: string
   anonimo: boolean
   respostas_adicionais?: AdditionalAnswer[]
+  // Tratativa de detratores (painel) — migration 0007
+  tratado?: boolean
+  nota_interna?: string
+  tratado_em?: string
+  tratado_por?: string
   created: string
   updated: string
   expand?: {

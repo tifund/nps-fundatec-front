@@ -283,10 +283,6 @@ export default function SurveyPage() {
                 </p>
               ) : null}
             </div>
-          ) : campanha.justificativa_detrator === 'geral' && campanha.justificativa_geral ? (
-            <p className="rounded-lg bg-sky-50 border border-sky-100 px-4 py-3 text-sm text-sky-900">
-              {campanha.justificativa_geral}
-            </p>
           ) : null}
 
           {/* 4) Perguntas adicionais — todas opcionais, na ordem cadastrada */}

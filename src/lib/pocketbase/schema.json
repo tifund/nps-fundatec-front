@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-11-05T10:25:58.858Z",
+  "generatedAt": "2026-11-05T10:33:30.031Z",
   "collections": [
     {
       "name": "users",
@@ -476,10 +476,35 @@
           "required": false,
           "system": false,
           "autodateTriggers": ["onCreate", "onUpdate"]
+        },
+        {
+          "name": "tratado",
+          "type": "bool",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "nota_interna",
+          "type": "text",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "tratado_em",
+          "type": "date",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "tratado_por",
+          "type": "text",
+          "required": false,
+          "system": false
         }
       ],
       "indexes": [
-        "CREATE INDEX idx_responses_campaign ON survey_responses (campaign_id, created DESC)"
+        "CREATE INDEX idx_responses_campaign ON survey_responses (campaign_id, created DESC)",
+        "CREATE INDEX `idx_responses_tratado` ON `survey_responses` (tratado)"
       ]
     },
     {

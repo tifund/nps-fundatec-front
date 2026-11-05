@@ -12,6 +12,7 @@ import {
   Menu,
   ExternalLink,
   UserCog,
+  LineChart,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Sheet, SheetContent, SheetTrigger } from '@/components/ui/sheet'
@@ -42,6 +43,7 @@ export default function AdminLayout({ children }: AdminLayoutProps) {
 
   const allNavItems = [
     { title: 'Dashboard NPS', href: '/admin', icon: BarChart3, show: true },
+    { title: 'Dashboards por Campanha', href: '/admin/dashboard', icon: LineChart, show: true },
     { title: 'Áreas de Negócio', href: '/admin/areas', icon: Layers, show: true },
     { title: 'Campanhas', href: '/admin/campanhas', icon: Megaphone, show: true },
     { title: 'Participantes', href: '/admin/participantes', icon: Users, show: true },

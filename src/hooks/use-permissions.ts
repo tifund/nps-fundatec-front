@@ -12,6 +12,7 @@ export function usePermissions() {
   const isGestor = perfil === 'gestor'
   const isLeitura = perfil === 'leitura'
   const isStaff = isAdmin || isGestor
+  const isGestorOuAdmin = isStaff
 
   return {
     perfil: perfil as Perfil | null,
@@ -33,5 +34,7 @@ export function usePermissions() {
     canDelete: isAdmin,
     // Exportação de relatórios: todos (inclusive LEITURA)
     canExport: true,
+    // Tratativa de detratores (marcar como tratado): somente ADMIN/GESTOR
+    canTratarDetrator: isGestorOuAdmin,
   }
 }
