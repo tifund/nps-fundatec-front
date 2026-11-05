@@ -1,6 +1,23 @@
 import pb from '@/lib/pocketbase/client'
 import { Dispatch } from '@/types/nps'
 
+export type ModoDisparo = 'inicial' | 'reenvio_todos'
+
+export interface ResultadoDisparo {
+  participante: string
+  email: string
+  status: 'sucesso' | 'falha'
+}
+
+export interface RespostaDisparo {
+  enviados: number
+  erros: number
+  ignorados: number
+  jaRespondidos?: number
+  detalhe?: string
+  resultados?: ResultadoDisparo[]
+}
+
 export async function getDispatches(campaignId?: string): Promise<Dispatch[]> {
   const filter = campaignId ? `campaign_id = "${campaignId}"` : ''
   return await pb.collection('dispatches').getFullList<Dispatch>({
@@ -60,4 +77,21 @@ export async function sendInviteViaBackend(
       detalhe: errorMsg,
     }
   }
+}
+
+/**
+ * Disparo em lote pelo backend (hook /backend/v1/nps/send-invites-batch).
+ * O backend decide quem recebe (trava de respondentes/já recebidos), envia
+ * via Resend e grava o log em dispatches — o frontend só dispara e resume.
+ */
+export async function sendInvitesBatch(
+  campaignId: string,
+  modo: ModoDisparo,
+): Promise<RespostaDisparo> {
+  const baseUrl = window.location.origin
+  const res = await pb.send<RespostaDisparo>('/backend/v1/nps/send-invites-batch', {
+    method: 'POST',
+    body: { campaignId, mode: modo, baseUrl },
+  })
+  return res
 }

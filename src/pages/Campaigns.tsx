@@ -44,12 +44,19 @@ import {
   ShieldAlert,
   Filter,
   Search,
+  Mail,
+  Link2,
+  ListChecks,
 } from 'lucide-react'
 import { useToast } from '@/hooks/use-toast'
 import { usePermissions } from '@/hooks/use-permissions'
+import { useNavigate } from 'react-router-dom'
 import CampaignFormDialog, { toPayload } from '@/components/CampaignFormDialog'
 import CampaignList from '@/components/CampaignList'
-import { CreateCampaignPayload } from '@/types/nps'
+import SendInvitesDialog from '@/components/SendInvitesDialog'
+import OpenLinkDialog from '@/components/OpenLinkDialog'
+import { getParticipants } from '@/services/participants'
+import { Participant, CreateCampaignPayload } from '@/types/nps'
 
 const COLLECTION = 'campaigns'
 const QUESTIONS_COLLECTION = 'questions'
@@ -69,6 +76,15 @@ export default function CampaignsPage() {
   const [isDialogOpen, setIsDialogOpen] = useState(false)
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [editingCampaign, setEditingCampaign] = useState<Campaign | null>(null)
+
+  // Envio de convites (prévia + disparo em lote) e link aberto
+  const [sendDialogCampaign, setSendDialogCampaign] = useState<Campaign | null>(null)
+  const [sendDialogOpen, setSendDialogOpen] = useState(false)
+  const [sendDialogParticipants, setSendDialogParticipants] = useState<Participant[]>([])
+  const [isLoadingParticipants, setIsLoadingParticipants] = useState(false)
+  const [openLinkCampaign, setOpenLinkCampaign] = useState<Campaign | null>(null)
+  const [openLinkDialogOpen, setOpenLinkDialogOpen] = useState(false)
+  const navigate = useNavigate()
 
   // Modal Perguntas Adicionais
   const [selectedCampaignForQuestions, setSelectedCampaignForQuestions] = useState<Campaign | null>(
@@ -206,6 +222,33 @@ export default function CampaignsPage() {
       title: 'Link copiado!',
       description: 'O link aberto da campanha foi copiado para a área de transferência.',
     })
+  }
+
+  const handleOpenSendInvites = async (camp: Campaign) => {
+    setSendDialogCampaign(camp)
+    setSendDialogOpen(true)
+    setIsLoadingParticipants(true)
+    try {
+      setSendDialogParticipants(await getParticipants(camp.id))
+    } catch {
+      setSendDialogParticipants([])
+      toast({
+        title: 'Erro ao carregar participantes',
+        description: 'Não foi possível carregar a lista de convocados.',
+        variant: 'destructive',
+      })
+    } finally {
+      setIsLoadingParticipants(false)
+    }
+  }
+
+  const handleOpenLink = (camp: Campaign) => {
+    setOpenLinkCampaign(camp)
+    setOpenLinkDialogOpen(true)
+  }
+
+  const handleViewDispatches = (camp: Campaign) => {
+    navigate('/admin/envios', { state: { campaignId: camp.id } })
   }
 
   const confirmClose = async () => {
@@ -433,6 +476,9 @@ export default function CampaignsPage() {
               onDelete={(c) => setConfirmDialog({ open: true, tipo: 'excluir', campaign: c })}
               onCopyLink={copyOpenLink}
               onViewQuestions={handleOpenQuestions}
+              onSendInvites={handleOpenSendInvites}
+              onOpenLink={handleOpenLink}
+              onViewDispatches={handleViewDispatches}
             />
           )}
         </CardContent>
@@ -588,6 +634,22 @@ export default function CampaignsPage() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      {/* Dialog: Enviar convites (prévia + disparo em lote via backend/Resend) */}
+      <SendInvitesDialog
+        open={sendDialogOpen}
+        onOpenChange={setSendDialogOpen}
+        campaign={sendDialogCampaign}
+        participants={sendDialogParticipants}
+        onDone={loadData}
+      />
+
+      {/* Dialog: Link aberto (copiar link / copiar mensagem pronta) */}
+      <OpenLinkDialog
+        open={openLinkDialogOpen}
+        onOpenChange={setOpenLinkDialogOpen}
+        campaign={openLinkCampaign}
+      />
 
       {/* Modal de confirmação: Encerrar / Excluir */}
       <Dialog

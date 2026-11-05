@@ -267,6 +267,13 @@ routerAdd('POST', '/backend/v1/nps/send-invite', (e) => {
       })
     }
 
+    // TRAVA: participante que JÁ RESPONDEU nunca recebe reenvio.
+    if (isResend && participant.getBool('respondido')) {
+      return e.json(400, {
+        error: 'Este participante já respondeu a avaliação e não recebe reenvio.',
+      })
+    }
+
     const inviteLink = `${baseUrl}/avaliar/${participant.getString('token')}`
 
     const emailSubject = isResend
@@ -308,26 +315,51 @@ routerAdd('POST', '/backend/v1/nps/send-invite', (e) => {
       </div>
     `
 
-    // Dispara envio de e-mail pelo serviço de e-mail do Skip Cloud
+    // Dispara envio de e-mail via Resend (RESEND_API_KEY no backend do Skip)
     let statusEnvio = 'sucesso'
     let detalhe = isResend
       ? 'Reenvio de convite por e-mail realizado.'
       : 'Convite inicial enviado por e-mail com link pessoal.'
 
-    try {
-      const email = new MailerMessage({
-        from: {
-          address: $app.settings().meta.senderAddress || 'noreply@fundatec.org.br',
-          name: $app.settings().meta.senderName || 'NPS Fundatec',
-        },
-        to: [{ address: participant.getString('email'), name: participant.getString('nome') }],
-        subject: emailSubject,
-        html: htmlBody,
-      })
-      $app.newMailClient().send(email)
-    } catch (err) {
+    const apiKey = $os.getenv('RESEND_API_KEY') || ''
+    const fromEmail = $os.getenv('RESEND_FROM_EMAIL') || 'nao_responder@sistemas.fundatec.org.br'
+    const fromName = 'Fundatec NPS'
+
+    if (apiKey === '') {
       statusEnvio = 'falha'
-      detalhe = `Erro ao disparar e-mail: ${err.message || String(err)}`
+      detalhe = 'Erro ao disparar e-mail: RESEND_API_KEY não configurada no backend.'
+    } else {
+      try {
+        const res = $http.send({
+          url: 'https://api.resend.com/emails',
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            Authorization: 'Bearer ' + apiKey,
+          },
+          body: JSON.stringify({
+            from: fromName + ' <' + fromEmail + '>',
+            to: [participant.getString('email')],
+            subject: emailSubject,
+            html: htmlBody,
+          }),
+        })
+        const st = res.status_code !== undefined ? res.status_code : res.statusCode || 0
+        if (!(st >= 200 && st < 300)) {
+          statusEnvio = 'falha'
+          let msg = 'HTTP ' + st
+          try {
+            const parsed = JSON.parse(
+              typeof res.body === 'string' ? res.body : JSON.stringify(res.body),
+            )
+            if (parsed && parsed.message) msg = msg + ': ' + parsed.message
+          } catch (_) {}
+          detalhe = `Erro ao disparar e-mail: ${msg}`
+        }
+      } catch (err) {
+        statusEnvio = 'falha'
+        detalhe = `Erro ao disparar e-mail: ${err.message || String(err)}`
+      }
     }
 
     // Registra o envio na coleção dispatches

@@ -1,5 +1,5 @@
 import { Campaign, Area, CampaignStats } from '@/types/nps'
-import { Calendar, Copy } from 'lucide-react'
+import { Calendar, Copy, Mail, Link2, ClipboardList } from 'lucide-react'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import {
@@ -21,6 +21,9 @@ interface Props {
   onDelete: (c: Campaign) => void
   onCopyLink: (c: Campaign) => void
   onViewQuestions: (c: Campaign) => void
+  onSendInvites: (c: Campaign) => void
+  onOpenLink: (c: Campaign) => void
+  onViewDispatches: (c: Campaign) => void
 }
 
 function statusBadge(c: Campaign, expired: boolean) {
@@ -71,6 +74,9 @@ export default function CampaignList({
   onDelete,
   onCopyLink,
   onViewQuestions,
+  onSendInvites,
+  onOpenLink,
+  onViewDispatches,
 }: Props) {
   return (
     <Table>
@@ -158,19 +164,53 @@ export default function CampaignList({
               </TableCell>
               <TableCell className="text-right space-x-1">
                 {camp.modo_acesso === 'link_aberto' && (
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    className="h-8 text-xs text-sky-700 border-sky-200 hover:bg-sky-50"
-                    onClick={() => onCopyLink(camp)}
-                    title="Copiar link aberto"
-                  >
-                    <Copy className="w-3 h-3 mr-1" />
-                    Copiar link
-                  </Button>
+                  <>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="h-8 text-xs text-sky-700 border-sky-200 hover:bg-sky-50"
+                      onClick={() => onCopyLink(camp)}
+                      title="Copiar link aberto"
+                    >
+                      <Copy className="w-3 h-3 mr-1" />
+                      Copiar link
+                    </Button>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="h-8 text-xs text-slate-600 border-slate-200 hover:bg-slate-50"
+                      onClick={() => onOpenLink(camp)}
+                      title="Link aberto: copiar link e mensagem pronta"
+                    >
+                      <Link2 className="w-3 h-3 mr-1" />
+                      Divulgar
+                    </Button>
+                  </>
                 )}
                 {canManage && (
                   <>
+                    {camp.modo_acesso === 'convites' && camp.status !== 'encerrada' && (
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        className="h-8 text-xs text-sky-700 border-sky-200 hover:bg-sky-50"
+                        onClick={() => onSendInvites(camp)}
+                        title="Enviar convites por e-mail (com prévia)"
+                      >
+                        <Mail className="w-3 h-3 mr-1" />
+                        Enviar convites
+                      </Button>
+                    )}
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      className="h-8 text-xs text-slate-600 hover:text-sky-700"
+                      onClick={() => onViewDispatches(camp)}
+                      title="Ver log de envios desta campanha"
+                    >
+                      <ClipboardList className="w-3 h-3 mr-1" />
+                      Envios
+                    </Button>
                     <Button
                       variant="ghost"
                       size="sm"
