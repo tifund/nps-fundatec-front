@@ -590,22 +590,36 @@ routerAdd('GET', '/backend/v1/nps/security-selftest', (e) => {
     return e.json(500, { error: 'appUrl indefinido' })
   }
 
-  function tryReq(method, path, body) {
-    try {
-      const res = $http.send({
-        url: baseUrl + path,
-        method: method,
-        headers: body ? { 'Content-Type': 'application/json' } : {},
-        body: body ? JSON.stringify(body) : null,
-      })
-      let text = ''
-      if (res.body !== undefined && res.body !== null) {
-        text = typeof res.body === 'string' ? res.body : JSON.stringify(res.body)
+  // As rotas NATIVAS do PocketBase (records API) ficam em /api/... — o prefixo
+  // /backend é apenas o proxy público das rotas CUSTOM dos hooks
+  // (/backend/v1/nps/...). Testar a records API na URL errada devolve 404
+  // "File not found" e invalida todo o bloco de fluxo.
+  function endpoint(path) {
+    if (path.indexOf('/backend/v1/collections/') === 0) {
+      return '/api' + path.substring('/backend'.length)
+    }
+    return path
+  }
+
+  // O corpo de $http.send pode chegar como string, objeto ou ARRAY DE BYTES —
+  // normaliza sempre para texto antes do JSON.parse.
+  function bodyText(res) {
+    const b = res.body
+    if (b === undefined || b === null) return ''
+    if (typeof b === 'string') return b
+    if (Array.isArray(b)) {
+      let s = ''
+      for (let i = 0; i < b.length; i++) s += String.fromCharCode(b[i] & 0xff)
+      try {
+        return decodeURIComponent(escape(s)) // bytes latin1 -> utf8
+      } catch (_) {
+        return s
       }
-      const status = res.status_code !== undefined ? res.status_code : res.statusCode || 0
-      return { status: status, body: text }
-    } catch (err) {
-      return { status: 0, body: err.message || String(err) }
+    }
+    try {
+      return JSON.stringify(b)
+    } catch (_) {
+      return String(b)
     }
   }
 
@@ -616,6 +630,350 @@ routerAdd('GET', '/backend/v1/nps/security-selftest', (e) => {
       return null
     }
   }
+
+  // 1) Bloqueio anônimo: cada coleção, cada operação (survey_responses create
+  //    é a única exceção pública e é testada à parte, com validação do hook)
+  const collections = [
+    'users',
+    'areas',
+    'campaigns',
+    'questions',
+    'participants',
+    'dispatches',
+    'survey_responses',
+    'system_logs',
+  ]
+  const createBodies = {
+    users: { email: 't@t.com', password: 'x', passwordConfirm: 'x' },
+    areas: { nome: 'teste-seguranca' },
+    campaigns: {
+      nome: 't',
+      pergunta_nps: 't',
+      modo_acesso: 'convites',
+      status: 'ativa',
+      justificativa_detrator: 'nenhuma',
+      slug: 't-seg',
+    },
+    questions: { enunciado: 't', tipo: 'texto', ordem: 1 },
+    participants: { nome: 't', email: 't@t.com', token: 't-seg' },
+    dispatches: { tipo: 'inicial', destinatario: 't@t.com', status: 'registrado' },
+    system_logs: { acao: 't-seg' },
+  }
+  for (const col of collections) {
+    const ops = [
+      ['list', 'GET', '/backend/v1/collections/' + col + '/records', null],
+      ['view', 'GET', '/backend/v1/collections/' + col + '/records/nonexistent0000000', null],
+      ['create', 'POST', '/backend/v1/collections/' + col + '/records', createBodies[col] || {}],
+      ['update', 'PATCH', '/backend/v1/collections/' + col + '/records/nonexistent0000000', {}],
+      ['delete', 'DELETE', '/backend/v1/collections/' + col + '/records/nonexistent0000000', null],
+    ]
+    for (const op of ops) {
+      let res
+      if (col === 'survey_responses' && op[0] === 'create') {
+        continue // testado nos blocos 2-4 abaixo
+      }
+      res = tryReq(op[1], op[2], op[3])
+      results.push({
+        test: 'anon ' + col + ' ' + op[0],
+        status: res.status,
+        pass: res.status >= 400,
+      })
+    }
+  }
+
+  // Campanha real de convites (seed)
+  let camp1 = null
+  try {
+    camp1 = $app.findFirstRecordByFilter('campaigns', 'slug = {:s}', { s: 'nps-ensino-2025-1' })
+  } catch (_) {}
+
+  // 1) Bloqueio anônimo: cada coleção, cada operação (survey_responses create
+  //    é a única exceção pública e é testada à parte, com validação do hook)
+=======
+    } catch (_) {
+      return null
+    }
+  }
+
+  // 1) Bloqueio anônimo: cada coleção, cada operação (survey_responses create
+  //    é a única exceção pública e é testada à parte, com validação do hook)
+  const collections = [
+=======
+    } catch (_) {
+      return null
+    }
+  }
+
+  // 1) Bloqueio anônimo: cada coleção, cada operação (survey_responses create
+=======
+
+  // 1) Bloqueio anônimo: cada coleção, cada operação (survey_responses create
+  //    é a única exceção pública e é testada à parte, com validação do hook)
+  const collections = [
+    'users',
+=======
+    } catch (_) {
+      return null
+    }
+  }
+
+  // 1) Bloqueio anônimo: cada coleção, cada operação (survey_responses create
+=======
+
+  // 1) Bloqueio anônimo: cada coleção, cada operação (survey_responses create
+  //    é a única exceção pública e é testada à parte, com validação do hook)
+  const collections = [
+    'users',
+    'areas',
+=======
+      return null
+    }
+  }
+
+  // 1) Bloqueio anônimo: cada coleção, cada operação (survey_responses create
+=======
+
+  // 1) Bloqueio anônimo: cada coleção, cada operação (survey_responses create
+  //    é a única exceção pública e é testada à parte, com validação do hook)
+=======
+    } catch (_) {
+      return null
+    }
+  }
+
+  // 1) Bloqueio anônimo: cada coleção, cada operação (survey_responses create
+  //    é a única exceção pública e é testada à parte, com validação do hook)
+  const collections = [
+=======
+    } catch (_) {
+      return null
+    }
+  }
+
+  // 1) Bloqueio anônimo: cada coleção, cada operação (survey_responses create
+=======
+
+  // 1) Bloqueio anônimo: cada coleção, cada operação (survey_responses create
+  //    é a única exceção pública e é testada à parte, com validação do hook)
+  const collections = [
+    'users',
+=======
+    } catch (_) {
+      return null
+    }
+  }
+
+  // 1) Bloqueio anônimo: cada coleção, cada operação (survey_responses create
+=======
+      return null
+    }
+  }
+
+  // 1) Bloqueio anônimo: cada coleção, cada operação (survey_responses create
+=======
+
+  // 1) Bloqueio anônimo: cada coleção, cada operação (survey_responses create
+  //    é a única exceção pública e é testada à parte, com validação do hook)
+=======
+    } catch (_) {
+      return null
+    }
+  }
+
+  // 1) Bloqueio anônimo: cada coleção, cada operação (survey_responses create
+  //    é a única exceção pública e é testada à parte, com validação do hook)
+  const collections = [
+=======
+
+  // 1) Bloqueio anônimo: cada coleção, cada operação (survey_responses create
+=======
+    } catch (_) {
+      return null
+    }
+  }
+
+  // 1) Bloqueio anônimo: cada coleção, cada operação (survey_responses create
+=======
+      return null
+    }
+  }
+
+  // 1) Bloqueio anônimo: cada coleção, cada operação (survey_responses create
+=======
+
+  // 1) Bloqueio anônimo: cada coleção, cada operação (survey_responses create
+  //    é a única exceção pública e é testada à parte, com validação do hook)
+  const collections = [
+    'users',
+    'areas',
+    'campaigns',
+    'questions',
+    'participants',
+    'dispatches',
+    'survey_responses',
+    'system_logs',
+  ]
+  const createBodies = {
+    users: { email: 't@t.com', password: 'x', passwordConfirm: 'x' },
+    areas: { nome: 'teste-seguranca' },
+    campaigns: {
+      nome: 't',
+      pergunta_nps: 't',
+      modo_acesso: 'convites',
+      status: 'ativa',
+      justificativa_detrator: 'nenhuma',
+      slug: 't-seg',
+    },
+    questions: { enunciado: 't', tipo: 'texto', ordem: 1 },
+    participants: { nome: 't', email: 't@t.com', token: 't-seg' },
+    dispatches: { tipo: 'inicial', destinatario: 't@t.com', status: 'registrado' },
+    system_logs: { acao: 't-seg' },
+  }
+  for (const col of collections) {
+    const ops = [
+      ['list', 'GET', '/backend/v1/collections/' + col + '/records', null],
+      ['view', 'GET', '/backend/v1/collections/' + col + '/records/nonexistent0000000', null],
+      ['create', 'POST', '/backend/v1/collections/' + col + '/records', createBodies[col] || {}],
+      ['update', 'PATCH', '/backend/v1/collections/' + col + '/records/nonexistent0000000', {}],
+      ['delete', 'DELETE', '/backend/v1/collections/' + col + '/records/nonexistent0000000', null],
+    ]
+    for (const op of ops) {
+      let res
+      if (col === 'survey_responses' && op[0] === 'create') {
+        continue // testado nos blocos 2-4 abaixo
+      }
+      res = tryReq(op[1], op[2], op[3])
+      results.push({
+        test: 'anon ' + col + ' ' + op[0],
+        status: res.status,
+        pass: res.status >= 400,
+      })
+    }
+  }
+
+  // Campanha real de convites (seed)
+  let camp1 = null
+  try {
+    camp1 = $app.findFirstRecordByFilter('campaigns', 'slug = {:s}', { s: 'nps-ensino-2025-1' })
+  } catch (_) {}
+  const campId = camp1 ? camp1.id : ''
+=======
+  const campId = camp1 ? camp1.id : ''
+=======
+
+  // 1) Bloqueio anônimo: cada coleção, cada operação (survey_responses create
+  //    é a única exceção pública e é testada à parte, com validação do hook)
+=======
+    } catch (_) {
+      return null
+    }
+  }
+
+  // 1) Bloqueio anônimo: cada coleção, cada operação (survey_responses create
+  //    é a única exceção pública e é testada à parte, com validação do hook)
+  const collections = [
+=======
+    } catch (_) {
+      return null
+    }
+  }
+
+  // 1) Bloqueio anônimo: cada coleção, cada operação (survey_responses create
+=======
+
+  // 1) Bloqueio anônimo: cada coleção, cada operação (survey_responses create
+  //    é a única exceção pública e é testada à parte, com validação do hook)
+  const collections = [
+    'users',
+=======
+    } catch (_) {
+      return null
+    }
+  }
+
+  // 1) Bloqueio anônimo: cada coleção, cada operação (survey_responses create
+=======
+
+  // 1) Bloqueio anônimo: cada coleção, cada operação (survey_responses create
+  //    é a única exceção pública e é testada à parte, com validação do hook)
+  const collections = [
+    'users',
+    'areas',
+=======
+      return null
+    }
+  }
+
+  // 1) Bloqueio anônimo: cada coleção, cada operação (survey_responses create
+=======
+
+  // 1) Bloqueio anônimo: cada coleção, cada operação (survey_responses create
+  //    é a única exceção pública e é testada à parte, com validação do hook)
+=======
+    } catch (_) {
+      return null
+    }
+  }
+
+  // 1) Bloqueio anônimo: cada coleção, cada operação (survey_responses create
+  //    é a única exceção pública e é testada à parte, com validação do hook)
+  const collections = [
+=======
+    } catch (_) {
+      return null
+    }
+  }
+
+  // 1) Bloqueio anônimo: cada coleção, cada operação (survey_responses create
+=======
+
+  // 1) Bloqueio anônimo: cada coleção, cada operação (survey_responses create
+  //    é a única exceção pública e é testada à parte, com validação do hook)
+  const collections = [
+    'users',
+=======
+    } catch (_) {
+      return null
+    }
+  }
+
+  // 1) Bloqueio anônimo: cada coleção, cada operação (survey_responses create
+=======
+      return null
+    }
+  }
+
+  // 1) Bloqueio anônimo: cada coleção, cada operação (survey_responses create
+=======
+
+  // 1) Bloqueio anônimo: cada coleção, cada operação (survey_responses create
+  //    é a única exceção pública e é testada à parte, com validação do hook)
+=======
+    } catch (_) {
+      return null
+    }
+  }
+
+  // 1) Bloqueio anônimo: cada coleção, cada operação (survey_responses create
+  //    é a única exceção pública e é testada à parte, com validação do hook)
+  const collections = [
+=======
+
+  // 1) Bloqueio anônimo: cada coleção, cada operação (survey_responses create
+=======
+    } catch (_) {
+      return null
+    }
+  }
+
+  // 1) Bloqueio anônimo: cada coleção, cada operação (survey_responses create
+=======
+      return null
+    }
+  }
+
+  // 1) Bloqueio anônimo: cada coleção, cada operação (survey_responses create
+=======
 
   // 1) Bloqueio anônimo: cada coleção, cada operação (survey_responses create
   //    é a única exceção pública e é testada à parte, com validação do hook)
@@ -799,12 +1157,14 @@ routerAdd('GET', '/backend/v1/nps/security-selftest', (e) => {
       pass: dup.status >= 400,
     })
 
-    // 9) Contexto após resposta deve indicar ja_respondida
+    // 9) Contexto após resposta deve indicar ja_respondida (asserção no campo,
+    //    não em substring — o corpo precisa ser parseável)
     const ctx2 = tryReq('GET', '/backend/v1/nps/survey-context?token=' + tmpToken)
+    const ctx2Parsed = parseBody(ctx2.body)
     results.push({
       test: 'fluxo convites: contexto após resposta (ja_respondida)',
       status: ctx2.status,
-      pass: ctx2.status === 200 && ctx2.body.indexOf('ja_respondida') !== -1,
+      pass: ctx2.status === 200 && !!ctx2Parsed && ctx2Parsed.closed_reason === 'ja_respondida',
     })
 
     // Limpeza dos dados temporários do teste
