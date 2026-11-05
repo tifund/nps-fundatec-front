@@ -22,6 +22,7 @@ routerAdd('GET', '/backend/v1/nps/survey-context', (e) => {
   const query = info.query || {}
   const token = (query.token || '').toString().trim()
   const slug = (query.slug || '').toString().trim()
+  const campanhaId = (query.campanha_id || '').toString().trim()
 
   try {
     let participant = null
@@ -40,8 +41,25 @@ routerAdd('GET', '/backend/v1/nps/survey-context', (e) => {
         return e.json(404, { error: 'Campanha não encontrada ou link indisponível.' })
       }
       campaign = found[0]
+    } else if (campanhaId) {
+      // Link aberto no novo formato: /avaliacao?campanha={id_publico}
+      const found = $app.findRecordsByFilter(
+        'campaigns',
+        'id = {:c} && modo_acesso = {:m}',
+        '',
+        1,
+        0,
+        {
+          c: campanhaId,
+          m: 'link_aberto',
+        },
+      )
+      if (found.length === 0) {
+        return e.json(404, { error: 'Campanha não encontrada ou link indisponível.' })
+      }
+      campaign = found[0]
     } else {
-      return e.json(400, { error: 'Informe o token do convite ou o slug da campanha.' })
+      return e.json(400, { error: 'Informe o token do convite ou o identificador da campanha.' })
     }
 
     // Estado de encerramento: status manual ou vigência expirada
@@ -86,10 +104,12 @@ routerAdd('GET', '/backend/v1/nps/survey-context', (e) => {
     return e.json(200, {
       campaign: {
         id: campaign.id,
+        id_publico: campaign.id,
         nome: campaign.getString('nome'),
         pergunta_nps: campaign.getString('pergunta_nps'),
         texto_geral: campaign.getString('texto_geral'),
         justificativa_detrator: campaign.getString('justificativa_detrator'),
+        justificativa_geral: campaign.getString('justificativa_geral'),
         status: campaign.getString('status'),
         vigencia_fim: vigenciaFim,
         modo_acesso: campaign.getString('modo_acesso'),
@@ -752,7 +772,7 @@ routerAdd('GET', '/backend/v1/nps/security-selftest', (e) => {
     } catch (_) {}
   }
 
-  // ---- Fluxo real da página de link aberto (/avaliar/aberto/:slug) ----
+  // ---- Fluxo real da página de link aberto (?campanha={id_publico}) ----
   // Campanha TEMPORÁRIA ativa de link aberto (removida no fim).
   let tmpOpenCamp = null
   try {
@@ -782,6 +802,20 @@ routerAdd('GET', '/backend/v1/nps/security-selftest', (e) => {
 
     // 10) Contexto por slug (o que a página /avaliar/aberto/:slug carrega)
     const ctxOpen = tryReq('GET', '/backend/v1/nps/survey-context?slug=' + tmpSlug)
+
+    // 10b) Contexto por campanha_id (novo formato /avaliacao?campanha={id_publico})
+    const ctxOpenId = tryReq('GET', '/backend/v1/nps/survey-context?campanha_id=' + tmpOpenCamp.id)
+    const ctxOpenIdParsed = parseBody(ctxOpenId.body)
+    results.push({
+      test: 'fluxo link aberto: survey-context por campanha_id',
+      status: ctxOpenId.status,
+      pass:
+        ctxOpenId.status === 200 &&
+        !!ctxOpenIdParsed &&
+        !!ctxOpenIdParsed.campaign &&
+        ctxOpenIdParsed.campaign.modo_acesso === 'link_aberto' &&
+        ctxOpenIdParsed.campaign.id_publico === tmpOpenCamp.id,
+    })
     const ctxOpenParsed = parseBody(ctxOpen.body)
     results.push({
       test: 'fluxo link aberto: survey-context por slug',

@@ -12,7 +12,7 @@ export function primeiroNome(nome: string): string {
 }
 
 export function linkConvite(baseUrl: string, token: string): string {
-  return `${baseUrl.replace(/\/+$/, '')}/avaliar/${token}`
+  return `${baseUrl.replace(/\/+$/, '')}/avaliacao?c=${token}`
 }
 
 export function renderConviteHtml(textoCampanha: string, pnome: string, link: string): string {

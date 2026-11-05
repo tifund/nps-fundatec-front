@@ -1,494 +1,409 @@
-import React, { useEffect, useState } from 'react'
-import { useParams, Link } from 'react-router-dom'
-import { getSurveyContext } from '@/services/surveyContext'
-import { submitSurveyResponse } from '@/services/responses'
-import { SurveyContext } from '@/types/nps'
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardFooter,
-  CardHeader,
-  CardTitle,
-} from '@/components/ui/card'
+import { useEffect, useMemo, useState } from 'react'
+import { useSearchParams } from 'react-router-dom'
+import { Loader2, ShieldCheck, Send, PartyPopper } from 'lucide-react'
 import { Button } from '@/components/ui/button'
+import { Checkbox } from '@/components/ui/checkbox'
 import { Textarea } from '@/components/ui/textarea'
-import { Label } from '@/components/ui/label'
-import { Input } from '@/components/ui/input'
-import { Switch } from '@/components/ui/switch'
-import { Badge } from '@/components/ui/badge'
 import {
-  CheckCircle2,
-  AlertCircle,
-  Loader2,
-  ShieldCheck,
-  Send,
-  HeartHandshake,
-  CalendarX,
-} from 'lucide-react'
+  getSurveyContext,
+  parseAvaliacaoParams,
+  type ParametroAvaliacao,
+} from '@/services/surveyContext'
+import { submitSurveyResponse } from '@/services/responses'
+import { primeiroNome } from '@/lib/convite/template'
+import type { SurveyContext } from '@/types/nps'
+import { cn } from '@/lib/utils'
+
+const ESCALA = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10]
+
+type RespostasAdicionais = Record<string, { nota?: number; texto?: string }>
+
+function corNota(n: number): string {
+  if (n <= 6) return 'bg-rose-600 hover:bg-rose-700 text-white'
+  if (n <= 8) return 'bg-amber-500 hover:bg-amber-600 text-white'
+  return 'bg-emerald-600 hover:bg-emerald-700 text-white'
+}
+
+// Escala 0 a 10 em botões grandes clicáveis (o toque principal da página — mobile first)
+function EscalaNps({
+  valor,
+  onChange,
+  disabled,
+}: {
+  valor: number | null
+  onChange: (n: number) => void
+  disabled?: boolean
+}) {
+  return (
+    <div className="grid grid-cols-11 gap-1 sm:gap-2 w-full">
+      {ESCALA.map((n) => (
+        <button
+          key={n}
+          type="button"
+          disabled={disabled}
+          onClick={() => onChange(n)}
+          aria-label={`Nota ${n}`}
+          className={cn(
+            'aspect-square w-full rounded-lg border text-base sm:text-xl font-bold transition-all',
+            'flex items-center justify-center select-none',
+            valor === n
+              ? corNota(n) + ' border-transparent scale-105 shadow-md'
+              : 'bg-white border-slate-300 text-slate-700 hover:border-sky-500 hover:text-sky-700 hover:bg-sky-50 active:scale-95',
+          )}
+        >
+          {n}
+        </button>
+      ))}
+    </div>
+  )
+}
+
+function RotulosEscala() {
+  return (
+    <div className="flex justify-between text-[11px] sm:text-xs text-slate-500 mt-1.5">
+      <span>Pouco provável</span>
+      <span>Muito provável</span>
+    </div>
+  )
+}
 
 export default function SurveyPage() {
-  const { token, slug } = useParams<{ token?: string; slug?: string }>()
+  const [searchParams] = useSearchParams()
+  const param: ParametroAvaliacao | null = useMemo(
+    () => parseAvaliacaoParams(searchParams),
+    [searchParams],
+  )
 
-  const [isLoading, setIsLoading] = useState(true)
-  const [errorMessage, setErrorMessage] = useState<string | null>(null)
-  const [alreadyAnswered, setAlreadyAnswered] = useState(false)
-  const [campaignClosed, setCampaignClosed] = useState(false)
+  const [carregando, setCarregando] = useState(true)
+  const [erroLink, setErroLink] = useState(false)
+  const [contexto, setContexto] = useState<SurveyContext | null>(null)
+  const [enviando, setEnviando] = useState(false)
+  const [enviado, setEnviado] = useState(false)
+  const [erroEnvio, setErroEnvio] = useState('')
 
-  const [context, setContext] = useState<SurveyContext | null>(null)
-
-  // Formulário de Resposta
-  const [selectedNota, setSelectedNota] = useState<number | null>(null)
+  // Formulário
+  const [nota, setNota] = useState<number | null>(null)
+  const [justificativa, setJustificativa] = useState('')
+  const [respostasAdicionais, setRespostasAdicionais] = useState<RespostasAdicionais>({})
   const [comentario, setComentario] = useState('')
-  const [justificativaDetrator, setJustificativaDetrator] = useState('')
   const [anonimo, setAnonimo] = useState(false)
-  const [additionalAnswers, setAdditionalAnswers] = useState<Record<string, string | number>>({})
-
-  const [isSubmitting, setIsSubmitting] = useState(false)
-  const [isSubmitted, setIsSubmitted] = useState(false)
 
   useEffect(() => {
-    async function loadSurvey() {
-      setIsLoading(true)
-      setErrorMessage(null)
+    setCarregando(true)
+    setErroLink(false)
+    setContexto(null)
+    setEnviado(false)
+    setErroEnvio('')
+    setNota(null)
+    setJustificativa('')
+    setRespostasAdicionais({})
+    setComentario('')
+    setAnonimo(false)
 
-      try {
-        // Contexto vem da rota pública do backend: o acesso anônimo direto a
-        // participants/campaigns/questions está bloqueado pelas regras de API.
-        const ctx = await getSurveyContext({ token, slug })
-
-        if (ctx.closed_reason === 'encerrada' || ctx.closed_reason === 'expirada') {
-          setCampaignClosed(true)
-        } else if (ctx.closed_reason === 'ja_respondida') {
-          setAlreadyAnswered(true)
-        }
-
-        setContext(ctx)
-      } catch (err: unknown) {
-        setErrorMessage(
-          (err as { response?: { message?: string } })?.response?.message ||
-            (err as Error)?.message ||
-            'Não foi possível carregar a pesquisa. Verifique o link e tente novamente.',
-        )
-      } finally {
-        setIsLoading(false)
-      }
-    }
-
-    loadSurvey()
-  }, [token, slug])
-
-  const campaign = context?.campaign ?? null
-  const participant = context?.participant ?? null
-  const questions = context?.questions ?? []
-
-  const isDetrator = selectedNota !== null && selectedNota <= 6
-  const requiresDetractorReason = campaign?.justificativa_detrator === 'obrigatoria' && isDetrator
-
-  const handleScoreSelect = (nota: number) => {
-    setSelectedNota(nota)
-  }
-
-  const handleAdditionalChange = (questionId: string, value: string | number) => {
-    setAdditionalAnswers((prev) => ({
-      ...prev,
-      [questionId]: value,
-    }))
-  }
-
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault()
-    if (selectedNota === null || !campaign) return
-
-    // Validação de justificativa obrigatória de detrator
-    if (requiresDetractorReason && !justificativaDetrator.trim()) {
-      alert('Por favor, informe a justificativa para que possamos aprimorar nossos serviços.')
+    if (!param) {
+      setCarregando(false)
+      setErroLink(true)
       return
     }
 
-    // Validação de perguntas adicionais obrigatórias
-    for (const q of questions) {
-      if (q.obrigatoria) {
-        const val = additionalAnswers[q.id]
-        if (val === undefined || val === '') {
-          alert(`Por favor, responda a pergunta obrigatória: "${q.enunciado}"`)
-          return
-        }
-      }
-    }
-
-    setIsSubmitting(true)
-    try {
-      const formattedAnswers = questions.map((q) => ({
-        question_id: q.id,
-        enunciado: q.enunciado,
-        valor: additionalAnswers[q.id] ?? '',
-      }))
-
-      // O token do convite viaja no payload: é o hook do backend que valida o
-      // token, vincula o participante e marca respondido = true.
-      await submitSurveyResponse({
-        campaign_id: campaign.id,
-        token: token,
-        nota: selectedNota,
-        comentario: comentario.trim() || undefined,
-        justificativa_detrator: justificativaDetrator.trim() || undefined,
-        anonimo: anonimo,
-        respostas_adicionais: formattedAnswers,
+    let ativo = true
+    getSurveyContext(param)
+      .then((ctx) => {
+        if (ativo) setContexto(ctx)
       })
+      .catch(() => {
+        if (ativo) setErroLink(true)
+      })
+      .finally(() => {
+        if (ativo) setCarregando(false)
+      })
+    return () => {
+      ativo = false
+    }
+  }, [param])
 
-      setIsSubmitted(true)
-    } catch (err: unknown) {
-      alert('Erro ao enviar avaliação: ' + ((err as Error)?.message || 'Tente novamente.'))
+  const campanha = contexto?.campaign ?? null
+  const participante = contexto?.participant ?? null
+  const perguntas = contexto?.questions ?? []
+
+  const jaRespondido = contexto?.closed_reason === 'ja_respondida'
+  const encerrada = contexto !== null && !jaRespondido && contexto.closed_reason !== ''
+
+  // Justificativa de detrator obrigatória: nota 0–6 + campanha "individual_obrigatoria"
+  const exigeJustificativa =
+    campanha?.justificativa_detrator === 'obrigatoria' && nota !== null && nota <= 6
+
+  const podeEnviar =
+    nota !== null && (!exigeJustificativa || justificativa.trim().length > 0) && !enviando
+
+  const enviar = async () => {
+    if (nota === null || !campanha || !param) return
+    setEnviando(true)
+    setErroEnvio('')
+    try {
+      await submitSurveyResponse({
+        campaign_id: campanha.id,
+        // Convite individual: o token localiza o participante no hook server-side.
+        // Anonimato marcado (ou link aberto): resposta sem vínculo individual;
+        // o participante do convite continua contabilizado como respondido.
+        token: param.tipo === 'token' ? param.token : '',
+        nota,
+        comentario: comentario.trim(),
+        justificativa_detrator: nota <= 6 && justificativa.trim() ? justificativa.trim() : '',
+        anonimo: anonimo,
+        respostas_adicionais: perguntas
+          .map((q) => {
+            const r = respostasAdicionais[q.id] || {}
+            const valor = q.tipo === 'nota' ? r.nota : (r.texto || '').trim()
+            if (valor === undefined || valor === null || valor === '') return null
+            return { question_id: q.id, enunciado: q.enunciado, valor }
+          })
+          .filter((v): v is { question_id: string; enunciado: string; valor: string | number } =>
+            Boolean(v),
+          ),
+      })
+      setEnviado(true)
+    } catch (err) {
+      setErroEnvio(
+        (err as Error)?.message || 'Não foi possível registrar sua avaliação. Tente novamente.',
+      )
     } finally {
-      setIsSubmitting(false)
+      setEnviando(false)
     }
   }
 
-  if (isLoading) {
+  // ---------- Estados de tela ----------
+
+  if (carregando) {
     return (
-      <div className="min-h-screen bg-slate-50 flex items-center justify-center p-4">
-        <div className="flex flex-col items-center gap-3">
-          <Loader2 className="w-8 h-8 text-sky-600 animate-spin" />
-          <p className="text-sm text-slate-500 font-medium">Carregando pesquisa de satisfação...</p>
-        </div>
-      </div>
+      <EstadoCentral>
+        <Loader2 className="w-8 h-8 text-sky-700 animate-spin" />
+        <p className="text-sm text-slate-500">Carregando avaliação…</p>
+      </EstadoCentral>
     )
   }
 
-  if (errorMessage) {
+  if (erroLink || !param || !contexto || !campanha) {
     return (
-      <div className="min-h-screen bg-slate-50 flex items-center justify-center p-4">
-        <Card className="max-w-md w-full border-slate-200 shadow-sm text-center p-6">
-          <AlertCircle className="w-12 h-12 text-rose-500 mx-auto mb-3" />
-          <h2 className="text-lg font-bold text-slate-800">Atenção</h2>
-          <p className="text-sm text-slate-600 mt-2">{errorMessage}</p>
-          <div className="mt-6">
-            <Link to="/login">
-              <Button variant="outline" size="sm">
-                Ir para o Painel
-              </Button>
-            </Link>
-          </div>
-        </Card>
-      </div>
+      <EstadoCentral>
+        <p className="text-lg font-medium text-slate-700">Link inválido ou expirado</p>
+      </EstadoCentral>
     )
   }
 
-  if (alreadyAnswered) {
+  if (jaRespondido) {
     return (
-      <div className="min-h-screen bg-slate-50 flex items-center justify-center p-4">
-        <Card className="max-w-md w-full border-slate-200 shadow-sm text-center p-8 bg-white">
-          <div className="w-14 h-14 rounded-full bg-emerald-50 text-emerald-600 flex items-center justify-center mx-auto mb-4 border border-emerald-100">
-            <CheckCircle2 className="w-8 h-8" />
-          </div>
-          <h2 className="text-xl font-bold text-slate-800">Avaliação Já Respondida</h2>
-          <p className="text-sm text-slate-600 mt-2">
-            Identificamos que este link de convite já foi utilizado para envio de avaliação.
-            Agradecemos sua colaboração!
-          </p>
-          <div className="mt-6 pt-4 border-t border-slate-100 text-xs text-slate-400">
-            Fundatec &bull; Gestão da Qualidade e Relacionamento
-          </div>
-        </Card>
-      </div>
+      <EstadoCentral>
+        <p className="text-lg font-medium text-slate-700">
+          Esta avaliação já foi preenchida. Obrigado!
+        </p>
+      </EstadoCentral>
     )
   }
 
-  if (campaignClosed) {
+  if (encerrada) {
     return (
-      <div className="min-h-screen bg-slate-50 flex items-center justify-center p-4">
-        <Card className="max-w-md w-full border-slate-200 shadow-sm text-center p-8 bg-white">
-          <div className="w-14 h-14 rounded-full bg-amber-50 text-amber-600 flex items-center justify-center mx-auto mb-4 border border-amber-100">
-            <CalendarX className="w-8 h-8" />
-          </div>
-          <h2 className="text-xl font-bold text-slate-800">Campanha Encerrada</h2>
-          <p className="text-sm text-slate-600 mt-2">
-            O período de recebimento de respostas para a campanha &quot;{campaign?.nome}&quot; foi
-            encerrado.
-          </p>
-          <div className="mt-6 pt-4 border-t border-slate-100 text-xs text-slate-400">
-            Fundatec &bull; Gestão da Qualidade e Relacionamento
-          </div>
-        </Card>
-      </div>
+      <EstadoCentral>
+        <p className="text-lg font-medium text-slate-700">Esta campanha está encerrada</p>
+      </EstadoCentral>
     )
   }
 
-  if (isSubmitted) {
+  if (enviado) {
     return (
-      <div className="min-h-screen bg-slate-50 flex items-center justify-center p-4">
-        <Card className="max-w-lg w-full border-slate-200 shadow-sm text-center p-8 bg-white">
-          <div className="w-16 h-16 rounded-full bg-sky-50 text-sky-600 flex items-center justify-center mx-auto mb-4 border border-sky-100">
-            <HeartHandshake className="w-8 h-8" />
-          </div>
-          <Badge className="mb-2 bg-emerald-50 text-emerald-700 border-emerald-200 hover:bg-emerald-50 text-xs font-semibold">
-            Resposta Gravada com Sucesso
-          </Badge>
-          <h2 className="text-2xl font-bold text-slate-800">Obrigado pela sua avaliação!</h2>
-          <p className="text-sm text-slate-600 mt-3 leading-relaxed">
-            Sua opinião é de extrema importância para a Fundatec. Nossas equipes analisam cada
-            feedback com carinho para aprimorar continuamente nossos serviços, cursos e processos.
-          </p>
-          <div className="mt-8 pt-4 border-t border-slate-100 text-xs text-slate-400">
-            Fundatec &copy; {new Date().getFullYear()} &bull; Compromisso com a Excelência
-          </div>
-        </Card>
-      </div>
+      <EstadoCentral>
+        <PartyPopper className="w-10 h-10 text-sky-700" />
+        <p className="text-lg font-semibold text-slate-800">Obrigado pela sua avaliação!</p>
+        <p className="text-sm text-slate-500">Sua opinião ajuda a Fundatec a melhorar.</p>
+      </EstadoCentral>
     )
   }
+
+  // ---------- Formulário ----------
+
+  const saudacao = participante ? `Olá, ${primeiroNome(participante.nome)}!` : 'Olá!'
 
   return (
-    <div className="min-h-screen bg-slate-100 py-8 px-4 sm:px-6 lg:px-8 flex justify-center">
-      <div className="w-full max-w-2xl">
-        {/* Cabeçalho da Marca */}
-        <div className="text-center mb-6">
-          <div className="inline-flex items-center justify-center w-12 h-12 rounded-xl bg-sky-600 text-white font-black text-xl shadow-md mb-2">
+    <div className="min-h-screen bg-gradient-to-b from-sky-50 via-white to-white">
+      <div className="mx-auto w-full max-w-xl px-4 py-8 sm:py-12">
+        {/* Cabeçalho institucional */}
+        <header className="text-center mb-6 sm:mb-8">
+          <div className="mx-auto mb-3 flex h-11 w-11 items-center justify-center rounded-xl bg-sky-700 text-white font-bold text-lg">
             F
           </div>
-          <h1 className="text-xl font-bold text-slate-800 tracking-tight">Fundatec NPS</h1>
-          <p className="text-xs text-slate-500">Pesquisa Institucional de Satisfação</p>
-        </div>
+          <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-sky-800">
+            Fundatec
+          </p>
+          <h1 className="mt-1 text-xl sm:text-2xl font-bold text-slate-800">
+            Pesquisa de Satisfação
+          </h1>
+          {campanha.area_nome ? (
+            <p className="mt-1 text-xs text-slate-500">{campanha.area_nome}</p>
+          ) : null}
+        </header>
 
-        <Card className="border-slate-200 shadow-sm bg-white overflow-hidden">
-          <div className="h-2 bg-sky-600 w-full" />
-          <CardHeader className="space-y-2 pb-4">
-            <div className="flex items-center justify-between">
-              <span className="text-xs font-semibold text-sky-700 bg-sky-50 px-2.5 py-1 rounded-full border border-sky-100">
-                {campaign?.area_nome || 'Fundatec'}
-              </span>
-              {participant && (
-                <span className="text-xs text-slate-500">
-                  Olá, <strong className="text-slate-700">{participant.nome}</strong>
-                </span>
+        <form
+          className="rounded-2xl border border-slate-200 bg-white p-5 sm:p-7 shadow-sm space-y-7"
+          onSubmit={(e) => {
+            e.preventDefault()
+            if (podeEnviar) void enviar()
+          }}
+        >
+          {/* 1) Saudação */}
+          <div>
+            <p className="text-base sm:text-lg font-medium text-slate-800">{saudacao}</p>
+            <p className="text-sm text-slate-500">Sua opinião é muito importante para nós.</p>
+          </div>
+
+          {/* 2) Pergunta NPS + escala 0–10 */}
+          <div className="space-y-3">
+            <label className="block text-sm sm:text-base font-semibold text-slate-800">
+              {campanha.pergunta_nps} <span className="text-rose-600">*</span>
+            </label>
+            <EscalaNps valor={nota} onChange={setNota} />
+            <RotulosEscala />
+          </div>
+
+          {/* 3) Justificativa do detrator (nota 0–6) */}
+          {campanha.justificativa_detrator === 'obrigatoria' && nota !== null && nota <= 6 ? (
+            <div className="space-y-2">
+              <label className="block text-sm font-semibold text-slate-800">
+                Nos ajude a melhorar: conte o que motivou sua nota{' '}
+                <span className="text-rose-600">*</span>
+              </label>
+              <Textarea
+                value={justificativa}
+                onChange={(e) => setJustificativa(e.target.value)}
+                rows={3}
+                className="resize-none"
+              />
+              {justificativa.trim() === '' ? (
+                <p className="text-xs text-rose-600">
+                  A justificativa é obrigatória para notas de 0 a 6.
+                </p>
+              ) : null}
+            </div>
+          ) : campanha.justificativa_detrator === 'geral' && campanha.justificativa_geral ? (
+            <p className="rounded-lg bg-sky-50 border border-sky-100 px-4 py-3 text-sm text-sky-900">
+              {campanha.justificativa_geral}
+            </p>
+          ) : null}
+
+          {/* 4) Perguntas adicionais — todas opcionais, na ordem cadastrada */}
+          {perguntas.map((q) => (
+            <div key={q.id} className="space-y-3">
+              <label className="block text-sm sm:text-base font-semibold text-slate-800">
+                {q.enunciado}
+              </label>
+              {q.tipo === 'nota' ? (
+                <>
+                  <EscalaNps
+                    valor={respostasAdicionais[q.id]?.nota ?? null}
+                    onChange={(n) =>
+                      setRespostasAdicionais((prev) => ({
+                        ...prev,
+                        [q.id]: { ...prev[q.id], nota: n },
+                      }))
+                    }
+                  />
+                  <RotulosEscala />
+                </>
+              ) : (
+                <Textarea
+                  value={respostasAdicionais[q.id]?.texto || ''}
+                  onChange={(e) =>
+                    setRespostasAdicionais((prev) => ({
+                      ...prev,
+                      [q.id]: { ...prev[q.id], texto: e.target.value },
+                    }))
+                  }
+                  rows={3}
+                  className="resize-none"
+                />
               )}
             </div>
+          ))}
 
-            <CardTitle className="text-lg font-bold text-slate-800 leading-snug">
-              {campaign?.nome}
-            </CardTitle>
+          {/* 5) Comentário aberto — presente em TODAS as campanhas */}
+          <div className="space-y-2">
+            <label className="block text-sm sm:text-base font-semibold text-slate-800">
+              Quer comentar algo mais?
+            </label>
+            <Textarea
+              value={comentario}
+              onChange={(e) => setComentario(e.target.value)}
+              rows={3}
+              className="resize-none"
+            />
+          </div>
 
-            {campaign?.texto_geral && (
-              <CardDescription className="text-xs text-slate-600 leading-relaxed bg-slate-50 p-3 rounded-lg border border-slate-100">
-                {campaign.texto_geral}
-              </CardDescription>
+          {/* 6) Anonimato — decisão do respondente na hora */}
+          <label className="flex items-start gap-3 rounded-lg border border-slate-200 bg-slate-50/60 px-4 py-3 cursor-pointer">
+            <Checkbox
+              checked={anonimo}
+              onCheckedChange={(v) => setAnonimo(v === true)}
+              className="mt-0.5"
+            />
+            <span className="text-sm text-slate-700 select-none">
+              Quero responder de forma anônima
+            </span>
+          </label>
+
+          {erroEnvio ? (
+            <p className="rounded-lg bg-rose-50 border border-rose-200 px-4 py-3 text-sm text-rose-700">
+              {erroEnvio}
+            </p>
+          ) : null}
+
+          {/* 7) Enviar */}
+          <Button
+            type="submit"
+            disabled={!podeEnviar}
+            className="w-full h-12 text-base font-semibold bg-sky-700 hover:bg-sky-800"
+          >
+            {enviando ? (
+              <Loader2 className="w-5 h-5 animate-spin" />
+            ) : (
+              <>
+                <Send className="w-4 h-4 mr-2" />
+                Enviar
+              </>
             )}
-          </CardHeader>
+          </Button>
+          {nota === null ? (
+            <p className="text-center text-xs text-slate-500">
+              Selecione uma nota de 0 a 10 para enviar.
+            </p>
+          ) : null}
+        </form>
 
-          <form onSubmit={handleSubmit}>
-            <CardContent className="space-y-6 pt-2">
-              {/* Pergunta Principal NPS */}
-              <div className="space-y-3 p-4 rounded-xl bg-slate-50/70 border border-slate-200">
-                <Label className="text-sm font-semibold text-slate-800 block leading-snug">
-                  {campaign?.pergunta_nps} *
-                </Label>
-                <p className="text-xs text-slate-500">
-                  Selecione uma nota de <strong>0 (pouco provável)</strong> a{' '}
-                  <strong>10 (extremamente provável)</strong>:
-                </p>
+        {/* 8) Rodapé */}
+        <footer className="mt-8 pb-6 text-center">
+          <ShieldCheck className="mx-auto mb-2 h-4 w-4 text-slate-400" />
+          <p className="text-[11px] text-slate-400">
+            Fundatec — Fundação Universidade Empresa de Tecnologia e Ciências
+          </p>
+          <a
+            href="https://fundatec.org.br"
+            target="_blank"
+            rel="noreferrer"
+            className="mt-1 inline-block text-xs text-sky-700 hover:underline"
+          >
+            Política de Privacidade
+          </a>
+        </footer>
+      </div>
+    </div>
+  )
+}
 
-                {/* Escala de Notas 0 a 10 */}
-                <div className="grid grid-cols-11 gap-1 sm:gap-1.5 pt-2">
-                  {[0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10].map((num) => {
-                    const isSelected = selectedNota === num
-                    let colorClass = 'hover:border-sky-400'
-
-                    if (isSelected) {
-                      if (num >= 9) colorClass = 'bg-emerald-600 text-white border-emerald-600'
-                      else if (num >= 7) colorClass = 'bg-amber-500 text-white border-amber-500'
-                      else colorClass = 'bg-rose-600 text-white border-rose-600'
-                    } else {
-                      colorClass = 'bg-white text-slate-700 border-slate-200 hover:bg-slate-50'
-                    }
-
-                    return (
-                      <button
-                        key={num}
-                        type="button"
-                        onClick={() => handleScoreSelect(num)}
-                        className={`h-11 sm:h-12 flex items-center justify-center rounded-lg border font-bold text-sm sm:text-base transition-all shadow-xs ${colorClass}`}
-                      >
-                        {num}
-                      </button>
-                    )
-                  })}
-                </div>
-
-                <div className="flex justify-between text-[11px] text-slate-400 font-medium px-1">
-                  <span>0 - Nada provável</span>
-                  <span>10 - Extremamente provável</span>
-                </div>
-
-                {selectedNota !== null && (
-                  <div className="pt-2 flex items-center justify-center">
-                    <Badge
-                      variant="outline"
-                      className={`text-xs py-1 px-3 ${
-                        selectedNota >= 9
-                          ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
-                          : selectedNota >= 7
-                            ? 'bg-amber-50 text-amber-700 border-amber-200'
-                            : 'bg-rose-50 text-rose-700 border-rose-200'
-                      }`}
-                    >
-                      Nota {selectedNota}:{' '}
-                      {selectedNota >= 9
-                        ? 'Promotor (Satisfeito)'
-                        : selectedNota >= 7
-                          ? 'Neutro'
-                          : 'Detrator (Necessita atenção)'}
-                    </Badge>
-                  </div>
-                )}
-              </div>
-
-              {/* Justificativa Obrigatória / Opcional para Detratores */}
-              {isDetrator && campaign?.justificativa_detrator !== 'nenhuma' && (
-                <div className="space-y-2 p-4 rounded-xl bg-rose-50/70 border border-rose-200">
-                  <div className="flex items-center gap-2">
-                    <AlertCircle className="w-4 h-4 text-rose-600 shrink-0" />
-                    <Label
-                      htmlFor="justificativa-detrator"
-                      className="text-xs font-semibold text-rose-900"
-                    >
-                      O que podemos fazer para melhorar sua experiência?{' '}
-                      {requiresDetractorReason && (
-                        <span className="text-rose-600">* (Obrigatório)</span>
-                      )}
-                    </Label>
-                  </div>
-                  <Textarea
-                    id="justificativa-detrator"
-                    rows={3}
-                    placeholder="Conte-nos o que motivou sua nota e quais aspectos precisamos aprimorar..."
-                    value={justificativaDetrator}
-                    onChange={(e) => setJustificativaDetrator(e.target.value)}
-                    required={requiresDetractorReason}
-                    className="text-xs bg-white border-rose-200 focus-visible:ring-rose-400"
-                  />
-                  <p className="text-[11px] text-rose-700">
-                    Sua crítica construtiva nos ajuda diretamente a corrigir processos e treinar
-                    equipes.
-                  </p>
-                </div>
-              )}
-
-              {/* Comentário Geral */}
-              <div className="space-y-1.5">
-                <Label htmlFor="comentario" className="text-xs font-medium text-slate-700">
-                  Comentário ou elogio adicional (opcional)
-                </Label>
-                <Textarea
-                  id="comentario"
-                  rows={2}
-                  placeholder="Deixe seus comentários, sugestões ou elogios..."
-                  value={comentario}
-                  onChange={(e) => setComentario(e.target.value)}
-                  className="text-xs"
-                />
-              </div>
-
-              {/* Perguntas Adicionais da Campanha */}
-              {questions.length > 0 && (
-                <div className="space-y-4 pt-2 border-t border-slate-100">
-                  <h3 className="text-xs font-bold uppercase tracking-wider text-slate-500">
-                    Perguntas Complementares
-                  </h3>
-
-                  {questions.map((q, idx) => (
-                    <div
-                      key={q.id}
-                      className="space-y-2 p-3.5 rounded-lg border border-slate-200 bg-slate-50/50"
-                    >
-                      <Label className="text-xs font-semibold text-slate-800 block">
-                        {idx + 1}. {q.enunciado}{' '}
-                        {q.obrigatoria && <span className="text-rose-500">*</span>}
-                      </Label>
-
-                      {q.tipo === 'nota' ? (
-                        <div className="space-y-1">
-                          <div className="grid grid-cols-11 gap-1">
-                            {[0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10].map((n) => {
-                              const isChecked = additionalAnswers[q.id] === n
-                              return (
-                                <button
-                                  key={n}
-                                  type="button"
-                                  onClick={() => handleAdditionalChange(q.id, n)}
-                                  className={`h-8 rounded text-xs font-bold border transition-colors ${
-                                    isChecked
-                                      ? 'bg-sky-600 text-white border-sky-600'
-                                      : 'bg-white text-slate-700 border-slate-200 hover:bg-slate-100'
-                                  }`}
-                                >
-                                  {n}
-                                </button>
-                              )
-                            })}
-                          </div>
-                          <div className="flex justify-between text-[10px] text-slate-400 px-0.5">
-                            <span>0 (Péssimo)</span>
-                            <span>10 (Excelente)</span>
-                          </div>
-                        </div>
-                      ) : (
-                        <Input
-                          placeholder="Sua resposta em texto..."
-                          value={(additionalAnswers[q.id] as string) || ''}
-                          onChange={(e) => handleAdditionalChange(q.id, e.target.value)}
-                          required={q.obrigatoria}
-                          className="text-xs bg-white"
-                        />
-                      )}
-                    </div>
-                  ))}
-                </div>
-              )}
-
-              {/* Opção de Anonimato */}
-              <div className="flex items-center justify-between p-3.5 rounded-lg border border-slate-200 bg-slate-50/70">
-                <div className="space-y-0.5">
-                  <div className="flex items-center gap-1.5">
-                    <ShieldCheck className="w-4 h-4 text-slate-600" />
-                    <Label
-                      htmlFor="anonimo-switch"
-                      className="text-xs font-semibold text-slate-800 cursor-pointer"
-                    >
-                      Enviar resposta de forma anônima
-                    </Label>
-                  </div>
-                  <p className="text-[11px] text-slate-500">
-                    Seu nome e e-mail não serão exibidos no relatório de respostas da pesquisa.
-                  </p>
-                </div>
-                <Switch id="anonimo-switch" checked={anonimo} onCheckedChange={setAnonimo} />
-              </div>
-            </CardContent>
-
-            <CardFooter className="pt-2 pb-6 px-6">
-              <Button
-                type="submit"
-                disabled={selectedNota === null || isSubmitting}
-                className="w-full bg-sky-600 hover:bg-sky-700 font-semibold h-11"
-              >
-                {isSubmitting ? (
-                  <>
-                    <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                    Gravando avaliação...
-                  </>
-                ) : (
-                  <>
-                    <Send className="w-4 h-4 mr-2" />
-                    Enviar Minha Avaliação
-                  </>
-                )}
-              </Button>
-            </CardFooter>
-          </form>
-        </Card>
-
-        <p className="text-center text-xs text-slate-400 mt-6">
-          Fundatec &bull; Fundação Universidade Empresa de Tecnologia e Ciências
+function EstadoCentral({ children }: { children: React.ReactNode }) {
+  return (
+    <div className="min-h-screen bg-gradient-to-b from-sky-50 via-white to-white flex items-center justify-center px-4">
+      <div className="max-w-md w-full text-center rounded-2xl border border-slate-200 bg-white p-8 shadow-sm space-y-3">
+        {children}
+        <p className="pt-2 text-[11px] text-slate-400">
+          Fundatec — Fundação Universidade Empresa de Tecnologia e Ciências
         </p>
       </div>
     </div>

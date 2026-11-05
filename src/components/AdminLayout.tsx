@@ -123,7 +123,7 @@ export default function AdminLayout({ children }: AdminLayoutProps) {
               Acesso Rápido
             </p>
             <Link
-              to="/avaliar/aberto/nps-candidatos-concursos-2025"
+              to="/admin/campanhas"
               target="_blank"
               className="flex items-center justify-between px-3 py-2 text-xs text-slate-600 hover:text-sky-700 hover:bg-slate-50 rounded-md transition-colors"
             >

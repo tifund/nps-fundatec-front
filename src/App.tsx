@@ -97,6 +97,8 @@ const App = () => (
           />
 
           {/* Rotas Públicas de Avaliação */}
+          {/* Convite individual: /avaliacao?c={token} — Link aberto: /avaliacao?campanha={id_publico} */}
+          <Route path="/avaliacao" element={<SurveyPage />} />
           <Route path="/avaliar/:token" element={<SurveyPage />} />
           <Route path="/avaliar/aberto/:slug" element={<SurveyPage />} />
 
