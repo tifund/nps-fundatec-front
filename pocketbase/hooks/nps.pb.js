@@ -560,14 +560,64 @@ onRecordCreate((e) => {
   }
 }, 'survey_responses')
 
+// onRecordDelete areas — PROTEÇÃO DE INTEGRIDADE
+// Uma área com campanhas vinculadas NÃO pode ser excluída
+// (vale para qualquer chamada de API, inclusive com token de
+// admin/gestor). Nesses casos a área só pode ser desativada.
 // ============================================================
-// [TEMPORÁRIO — SELF-TEST] GET /backend/v1/nps/security-selftest
-// Valida o bloqueio anônimo por coleção/operação e o fluxo real
-// das duas páginas públicas (token e link aberto). Remove após uso.
+onRecordDelete((e) => {
+  const vinculadas = $app.findRecordsByFilter(
+    'campaigns',
+    "area_id = '" + e.record.id + "'",
+    '',
+    1,
+    1,
+  )
+  if (vinculadas.length > 0) {
+    throw new BadRequestError(
+      'Esta área possui campanhas vinculadas e não pode ser excluída. ' +
+        'Somente áreas sem campanhas podem ser excluídas — desative esta área para impedir novas campanhas.',
+    )
+  }
+  e.next()
+}, 'areas')
+
 // ============================================================
-routerAdd('GET', '/backend/v1/nps/security-selftest', (e) => {
-  const results = []
-  const candidates = [
+// onRecordCreate / onRecordUpdate areas — nome único com mensagem
+// amigável (o índice UNIQUE já existe; aqui antecipamos a validação
+// de forma case-insensitive para devolver erro claro ao usuário).
+// Nota: funções top-level não são visíveis dentro dos callbacks do
+// JSVM, então a lógica fica inline em cada handler.
+// ============================================================
+onRecordCreate((e) => {
+  const nome = (e.record.getString('nome') || '').trim().toLowerCase()
+  if (nome === '') {
+    throw new BadRequestError('Informe o nome da área de negócio.')
+  }
+  const todas = $app.findRecordsByFilter('areas', "id != ''", '', 500, 0)
+  for (const a of todas) {
+    if (a.getString('nome').trim().toLowerCase() === nome) {
+      throw new BadRequestError('Já existe uma área de negócio com este nome.')
+    }
+  }
+  e.next()
+}, 'areas')
+
+onRecordUpdate((e) => {
+  const nome = (e.record.getString('nome') || '').trim().toLowerCase()
+  if (nome === '') {
+    throw new BadRequestError('Informe o nome da área de negócio.')
+  }
+  const todas = $app.findRecordsByFilter('areas', "id != ''", '', 500, 0)
+  for (const a of todas) {
+    if (a.id === e.record.id) continue
+    if (a.getString('nome').trim().toLowerCase() === nome) {
+      throw new BadRequestError('Já existe uma área de negócio com este nome.')
+    }
+  }
+  e.next()
+}, 'areas')
+/*
     ($app.settings().meta.appUrl || '').replace(/\/+$/, ''),
     ($os.getenv('PB_INSTANCE_URL') || '').replace(/\/+$/, ''),
   ].filter((u) => u !== '')
@@ -1992,77 +2042,4 @@ routerAdd('GET', '/backend/v1/nps/security-selftest', (e) => {
       pass: false,
       error: err.message || String(err),
     })
-  } finally {
-    if (tmpClosedCamp) {
-      try {
-        $app.delete($app.findRecordById('campaigns', tmpClosedCamp.id))
-      } catch (_) {}
-    }
-  }
-
-  const failed = results.filter((r) => r.pass === false).length
-  return e.json(200, {
-    baseUrl: baseUrl,
-    summary: { total: results.length, failed: failed },
-    results: results,
-  })
-})
-
-// ============================================================
-// onRecordDelete areas — PROTEÇÃO DE INTEGRIDADE
-// Uma área com campanhas vinculadas NÃO pode ser excluída
-// (vale para qualquer chamada de API, inclusive com token de
-// admin/gestor). Nesses casos a área só pode ser desativada.
-// ============================================================
-onRecordDelete((e) => {
-  const vinculadas = $app.findRecordsByFilter(
-    'campaigns',
-    "area_id = '" + e.record.id + "'",
-    '',
-    1,
-    1,
-  )
-  if (vinculadas.length > 0) {
-    throw new BadRequestError(
-      'Esta área possui campanhas vinculadas e não pode ser excluída. ' +
-        'Somente áreas sem campanhas podem ser excluídas — desative esta área para impedir novas campanhas.',
-    )
-  }
-  e.next()
-}, 'areas')
-
-// ============================================================
-// onRecordCreate / onRecordUpdate areas — nome único com mensagem
-// amigável (o índice UNIQUE já existe; aqui antecipamos a validação
-// de forma case-insensitive para devolver erro claro ao usuário).
-// Nota: funções top-level não são visíveis dentro dos callbacks do
-// JSVM, então a lógica fica inline em cada handler.
-// ============================================================
-onRecordCreate((e) => {
-  const nome = (e.record.getString('nome') || '').trim().toLowerCase()
-  if (nome === '') {
-    throw new BadRequestError('Informe o nome da área de negócio.')
-  }
-  const todas = $app.findRecordsByFilter('areas', "id != ''", '', 500, 0)
-  for (const a of todas) {
-    if (a.getString('nome').trim().toLowerCase() === nome) {
-      throw new BadRequestError('Já existe uma área de negócio com este nome.')
-    }
-  }
-  e.next()
-}, 'areas')
-
-onRecordUpdate((e) => {
-  const nome = (e.record.getString('nome') || '').trim().toLowerCase()
-  if (nome === '') {
-    throw new BadRequestError('Informe o nome da área de negócio.')
-  }
-  const todas = $app.findRecordsByFilter('areas', "id != ''", '', 500, 0)
-  for (const a of todas) {
-    if (a.id === e.record.id) continue
-    if (a.getString('nome').trim().toLowerCase() === nome) {
-      throw new BadRequestError('Já existe uma área de negócio com este nome.')
-    }
-  }
-  e.next()
-}, 'areas')
+*/

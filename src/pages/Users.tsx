@@ -114,7 +114,6 @@ export default function UsersPage() {
         password: data.password,
         passwordConfirm: data.password,
         precisa_trocar_senha: true,
-        verified: true,
       })
       toast({
         title: 'Usuário criado',
