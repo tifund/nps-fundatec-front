@@ -1,15 +1,15 @@
 {
-  "generatedAt": "2026-11-05T01:56:44.325Z",
+  "generatedAt": "2026-11-05T02:15:20.807Z",
   "collections": [
     {
       "name": "users",
       "type": "auth",
       "apiRules": {
-        "list": "id = @request.auth.id",
-        "view": "id = @request.auth.id",
-        "create": "",
-        "update": "id = @request.auth.id",
-        "delete": "id = @request.auth.id"
+        "list": "@request.auth.id != ''",
+        "view": "@request.auth.id != ''",
+        "create": "id = ''",
+        "update": "@request.auth.id != '' && id = @request.auth.id && @request.body.name:changed = false && @request.body.avatar:changed = false",
+        "delete": "id = ''"
       },
       "fields": [
         {
@@ -88,8 +88,8 @@
       "name": "campaigns",
       "type": "base",
       "apiRules": {
-        "list": "",
-        "view": "",
+        "list": "@request.auth.id != ''",
+        "view": "@request.auth.id != ''",
         "create": "@request.auth.id != ''",
         "update": "@request.auth.id != ''",
         "delete": "@request.auth.id != ''"
@@ -177,8 +177,8 @@
       "name": "questions",
       "type": "base",
       "apiRules": {
-        "list": "",
-        "view": "",
+        "list": "@request.auth.id != ''",
+        "view": "@request.auth.id != ''",
         "create": "@request.auth.id != ''",
         "update": "@request.auth.id != ''",
         "delete": "@request.auth.id != ''"
@@ -238,9 +238,9 @@
       "type": "base",
       "apiRules": {
         "list": "@request.auth.id != ''",
-        "view": "",
+        "view": "@request.auth.id != ''",
         "create": "@request.auth.id != ''",
-        "update": "",
+        "update": "@request.auth.id != ''",
         "delete": "@request.auth.id != ''"
       },
       "fields": [
@@ -375,7 +375,7 @@
       "apiRules": {
         "list": "@request.auth.id != ''",
         "view": "@request.auth.id != ''",
-        "create": "",
+        "create": "@request.body.nota >= 0 && @request.body.nota <= 10 && @request.body.classificacao != ''",
         "update": "@request.auth.id != ''",
         "delete": "@request.auth.id != ''"
       },
@@ -456,7 +456,7 @@
       "apiRules": {
         "list": "@request.auth.id != ''",
         "view": "@request.auth.id != ''",
-        "create": "",
+        "create": "@request.auth.id != ''",
         "update": "@request.auth.id != ''",
         "delete": "@request.auth.id != ''"
       },

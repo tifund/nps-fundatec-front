@@ -1,9 +1,8 @@
 import React, { useEffect, useState } from 'react'
 import { useParams, Link } from 'react-router-dom'
-import { getParticipantByToken } from '@/services/participants'
-import { getCampaignBySlug, getCampaignQuestions } from '@/services/campaigns'
+import { getSurveyContext } from '@/services/surveyContext'
 import { submitSurveyResponse } from '@/services/responses'
-import { Campaign, Participant, Question } from '@/types/nps'
+import { SurveyContext } from '@/types/nps'
 import {
   Card,
   CardContent,
@@ -17,7 +16,6 @@ import { Textarea } from '@/components/ui/textarea'
 import { Label } from '@/components/ui/label'
 import { Input } from '@/components/ui/input'
 import { Switch } from '@/components/ui/switch'
-import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
 import { Badge } from '@/components/ui/badge'
 import {
   CheckCircle2,
@@ -37,9 +35,7 @@ export default function SurveyPage() {
   const [alreadyAnswered, setAlreadyAnswered] = useState(false)
   const [campaignClosed, setCampaignClosed] = useState(false)
 
-  const [campaign, setCampaign] = useState<Campaign | null>(null)
-  const [participant, setParticipant] = useState<Participant | null>(null)
-  const [questions, setQuestions] = useState<Question[]>([])
+  const [context, setContext] = useState<SurveyContext | null>(null)
 
   // Formulário de Resposta
   const [selectedNota, setSelectedNota] = useState<number | null>(null)
@@ -57,63 +53,23 @@ export default function SurveyPage() {
       setErrorMessage(null)
 
       try {
-        let loadedCampaign: Campaign | null = null
-        let loadedParticipant: Participant | null = null
+        // Contexto vem da rota pública do backend: o acesso anônimo direto a
+        // participants/campaigns/questions está bloqueado pelas regras de API.
+        const ctx = await getSurveyContext({ token, slug })
 
-        if (token) {
-          // Acesso via token individual de convite
-          try {
-            loadedParticipant = await getParticipantByToken(token)
-            setParticipant(loadedParticipant)
-
-            if (loadedParticipant.respondido) {
-              setAlreadyAnswered(true)
-              setIsLoading(false)
-              return
-            }
-
-            if (loadedParticipant.expand?.campaign_id) {
-              loadedCampaign = loadedParticipant.expand.campaign_id
-            }
-          } catch {
-            setErrorMessage('Convite não encontrado ou link de avaliação inválido.')
-            setIsLoading(false)
-            return
-          }
-        } else if (slug) {
-          // Acesso via link aberto da campanha
-          try {
-            loadedCampaign = await getCampaignBySlug(slug)
-          } catch {
-            setErrorMessage('Campanha não encontrada ou link indisponível.')
-            setIsLoading(false)
-            return
-          }
-        }
-
-        if (!loadedCampaign) {
-          setErrorMessage('Não foi possível identificar a campanha de avaliação.')
-          setIsLoading(false)
-          return
-        }
-
-        // Verifica encerramento ou vigência
-        const isExpirada =
-          loadedCampaign.vigencia_fim && new Date(loadedCampaign.vigencia_fim) < new Date()
-        if (loadedCampaign.status === 'encerrada' || isExpirada) {
+        if (ctx.closed_reason === 'encerrada' || ctx.closed_reason === 'expirada') {
           setCampaignClosed(true)
-          setCampaign(loadedCampaign)
-          setIsLoading(false)
-          return
+        } else if (ctx.closed_reason === 'ja_respondida') {
+          setAlreadyAnswered(true)
         }
 
-        setCampaign(loadedCampaign)
-
-        // Busca perguntas adicionais da campanha
-        const qList = await getCampaignQuestions(loadedCampaign.id)
-        setQuestions(qList)
+        setContext(ctx)
       } catch (err: unknown) {
-        setErrorMessage((err as Error)?.message || 'Ocorreu um erro ao carregar a pesquisa.')
+        setErrorMessage(
+          (err as { response?: { message?: string } })?.response?.message ||
+            (err as Error)?.message ||
+            'Não foi possível carregar a pesquisa. Verifique o link e tente novamente.',
+        )
       } finally {
         setIsLoading(false)
       }
@@ -121,6 +77,10 @@ export default function SurveyPage() {
 
     loadSurvey()
   }, [token, slug])
+
+  const campaign = context?.campaign ?? null
+  const participant = context?.participant ?? null
+  const questions = context?.questions ?? []
 
   const isDetrator = selectedNota !== null && selectedNota <= 6
   const requiresDetractorReason = campaign?.justificativa_detrator === 'obrigatoria' && isDetrator
@@ -165,9 +125,11 @@ export default function SurveyPage() {
         valor: additionalAnswers[q.id] ?? '',
       }))
 
+      // O token do convite viaja no payload: é o hook do backend que valida o
+      // token, vincula o participante e marca respondido = true.
       await submitSurveyResponse({
         campaign_id: campaign.id,
-        participant_id: participant?.id,
+        token: token,
         nota: selectedNota,
         comentario: comentario.trim() || undefined,
         justificativa_detrator: justificativaDetrator.trim() || undefined,
@@ -293,7 +255,7 @@ export default function SurveyPage() {
           <CardHeader className="space-y-2 pb-4">
             <div className="flex items-center justify-between">
               <span className="text-xs font-semibold text-sky-700 bg-sky-50 px-2.5 py-1 rounded-full border border-sky-100">
-                {campaign?.expand?.area_id?.nome || 'Fundatec'}
+                {campaign?.area_nome || 'Fundatec'}
               </span>
               {participant && (
                 <span className="text-xs text-slate-500">

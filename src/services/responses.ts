@@ -10,9 +10,20 @@ export async function getSurveyResponses(campaignId?: string): Promise<SurveyRes
   })
 }
 
+/**
+ * Registra a resposta da avaliação pública.
+ *
+ * Fluxo seguro (regras fechadas + hook onCreate):
+ * - o create público em survey_responses exige nota (0-10) e classificação;
+ * - o hook server-side valida token/campanha ativa/vigência/já respondeu,
+ *   vincula o participante quando o convite existe (body.token) e marca
+ *   respondido = true;
+ * - o log do sistema é gravado pelo hook (system_logs não aceita mais
+ *   creates públicos).
+ */
 export async function submitSurveyResponse(data: {
   campaign_id: string
-  participant_id?: string
+  token?: string
   nota: number
   comentario?: string
   justificativa_detrator?: string
@@ -26,35 +37,17 @@ export async function submitSurveyResponse(data: {
     classificacao = 'detrator'
   }
 
-  const response = await pb.collection('survey_responses').create<SurveyResponse>({
-    ...data,
+  return await pb.collection('survey_responses').create<SurveyResponse>({
+    campaign_id: data.campaign_id,
+    // token do convite (quando houver); o hook valida e vincula o participante
+    token: data.token || '',
+    nota: data.nota,
     classificacao,
+    comentario: data.comentario || '',
+    justificativa_detrator: data.justificativa_detrator || '',
+    anonimo: data.anonimo,
+    respostas_adicionais: data.respostas_adicionais || [],
   })
-
-  // Se veio de participante, marca como respondido
-  if (data.participant_id) {
-    try {
-      await pb.collection('participants').update(data.participant_id, {
-        respondido: true,
-        respondido_em: new Date().toISOString(),
-      })
-    } catch (e) {
-      console.error('Erro ao atualizar participante como respondido:', e)
-    }
-  }
-
-  // Registra log da resposta
-  try {
-    await pb.collection('system_logs').create({
-      acao: 'resposta_enviada',
-      detalhe: `Avaliação NPS registrada com nota ${data.nota} (${classificacao}) para campanha ${data.campaign_id}`,
-      usuario: data.anonimo ? 'Anônimo' : data.participant_id || 'Visitante',
-    })
-  } catch {
-    /* intentionally ignored */
-  }
-
-  return response
 }
 
 export async function getSystemLogs(limit: number = 50): Promise<SystemLog[]> {

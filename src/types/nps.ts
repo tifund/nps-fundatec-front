@@ -98,3 +98,22 @@ export interface SystemLog {
   created: string
   updated: string
 }
+
+// Contexto devolvido pela rota pública /backend/v1/nps/survey-context
+// (o acesso público direto a campaigns/participants/questions está fechado)
+export interface SurveyContext {
+  campaign: {
+    id: string
+    nome: string
+    pergunta_nps: string
+    texto_geral?: string
+    justificativa_detrator: 'obrigatoria' | 'geral' | 'nenhuma'
+    status: 'ativa' | 'encerrada'
+    vigencia_fim?: string
+    modo_acesso: 'convites' | 'link_aberto'
+    area_nome: string
+  }
+  participant: { id: string; nome: string; respondido: boolean } | null
+  questions: Pick<Question, 'id' | 'enunciado' | 'tipo' | 'obrigatoria' | 'ordem'>[]
+  closed_reason: '' | 'encerrada' | 'expirada' | 'ja_respondida'
+}
