@@ -1,12 +1,13 @@
-import React, { useEffect, useState } from 'react'
+import React, { useEffect, useMemo, useState } from 'react'
 import {
   getParticipants,
   createParticipant,
   importParticipantsBatch,
 } from '@/services/participants'
 import { getCampaigns } from '@/services/campaigns'
-import { sendInviteViaBackend } from '@/services/dispatches'
+import { getDispatches, sendInviteViaBackend, createDispatchRecord } from '@/services/dispatches'
 import { Participant, Campaign } from '@/types/nps'
+import CampaignParticipants from '@/components/CampaignParticipants'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -73,16 +74,54 @@ export default function ParticipantsPage() {
   // Status de envio
   const [sendingId, setSendingId] = useState<string | null>(null)
 
+  // Data do último envio por participante (inicial/reenvio com sucesso)
+  const [ultimoEnvio, setUltimoEnvio] = useState<Record<string, string>>({})
+
   const { toast } = useToast()
   const { canManageParticipants, canSendInvites, isLeitura } = usePermissions()
+
+  // Campanhas em modo "convites individuais" visíveis no filtro atual —
+  // cada uma recebe sua própria seção de Participantes.
+  const convitesCampaigns = useMemo(
+    () =>
+      campaigns.filter(
+        (c) =>
+          c.modo_acesso === 'convites' &&
+          (selectedCampaignId === 'all' || c.id === selectedCampaignId),
+      ),
+    [campaigns, selectedCampaignId],
+  )
+  const participantsByCampaign = useMemo(() => {
+    const map: Record<string, Participant[]> = {}
+    for (const p of participants) {
+      if (!map[p.campaign_id]) map[p.campaign_id] = []
+      map[p.campaign_id].push(p)
+    }
+    return map
+  }, [participants])
+  // Participantes de campanhas em modo link aberto continuam na lista plana abaixo
+  const participantesPlanos = useMemo(() => {
+    const convitesIds = new Set(convitesCampaigns.map((c) => c.id))
+    return participants.filter((p) => !convitesIds.has(p.campaign_id))
+  }, [participants, convitesCampaigns])
 
   const loadData = async () => {
     setIsLoading(true)
     try {
-      const [camps, parts] = await Promise.all([
+      const [camps, parts, disp] = await Promise.all([
         getCampaigns(),
         getParticipants(selectedCampaignId === 'all' ? undefined : selectedCampaignId),
+        getDispatches(selectedCampaignId === 'all' ? undefined : selectedCampaignId),
       ])
+      // último envio com sucesso por participante
+      const envios: Record<string, string> = {}
+      for (const d of disp) {
+        if (d.participant_id && d.status === 'sucesso' && d.tipo !== 'copia_link') {
+          const atual = envios[d.participant_id]
+          if (!atual || new Date(d.created) > new Date(atual)) envios[d.participant_id] = d.created
+        }
+      }
+      setUltimoEnvio(envios)
       setCampaigns(camps)
       setParticipants(parts)
     } catch {
@@ -214,12 +253,29 @@ export default function ParticipantsPage() {
     }
   }
 
+  const handleReenviar = (p: Participant) => handleSendInvite(p, true)
+
+  const handleImportado = () => {
+    loadData()
+  }
+
   const handleCopyPersonalLink = (p: Participant) => {
     const url = `${window.location.origin}/avaliar/${p.token}`
     navigator.clipboard.writeText(url)
+    // registra a cópia no histórico de dispatches (tipo copia_link)
+    createDispatchRecord({
+      campaign_id: p.campaign_id,
+      participant_id: p.id,
+      tipo: 'copia_link',
+      destinatario: p.email,
+      status: 'registrado',
+      detalhe: 'Link individual copiado manualmente pelo painel',
+    }).catch(() => {
+      // registro informativo — não bloqueia a ação do usuário
+    })
     toast({
       title: 'Link pessoal copiado!',
-      description: `Link do participante ${p.nome} copiado para a área de transferência.`,
+      description: `Link de avaliação de ${p.nome} copiado (${p.token.slice(0, 12)}…).`,
     })
   }
 
@@ -283,146 +339,168 @@ export default function ParticipantsPage() {
         </div>
       </div>
 
-      <Card className="border-slate-200 shadow-sm bg-white">
-        <CardHeader className="pb-3 border-b border-slate-100 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-          <div>
+      {/* Seção "Participantes" por campanha em modo convites individuais */}
+      {convitesCampaigns.map((c) => (
+        <CampaignParticipants
+          key={c.id}
+          campaignId={c.id}
+          campaignNome={c.nome}
+          participantes={participantsByCampaign[c.id] || []}
+          ultimoEnvio={ultimoEnvio}
+          loading={isLoading}
+          sendingId={sendingId}
+          onImportado={handleImportado}
+          onCopiarLink={handleCopyPersonalLink}
+          onReenviar={handleReenviar}
+        />
+      ))}
+
+      {/* Lista plana: participantes de campanhas em modo link aberto (ou quando
+          nenhuma campanha em modo convites está visível no filtro atual) */}
+      {(convitesCampaigns.length === 0 || participantesPlanos.length > 0) && (
+        <Card className="border-slate-200 shadow-sm bg-white">
+          <CardHeader className="pb-3 border-b border-slate-100 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+            <div>
+              <div className="flex items-center gap-2">
+                <Users className="w-5 h-5 text-sky-600" />
+                <CardTitle className="text-base font-semibold text-slate-800">
+                  Lista de Participantes ({participants.length})
+                </CardTitle>
+              </div>
+              <CardDescription className="text-xs text-slate-500">
+                Cada participante possui um token e link exclusivo para resposta individual.
+              </CardDescription>
+            </div>
+
             <div className="flex items-center gap-2">
-              <Users className="w-5 h-5 text-sky-600" />
-              <CardTitle className="text-base font-semibold text-slate-800">
-                Lista de Participantes ({participants.length})
-              </CardTitle>
+              <Filter className="w-4 h-4 text-slate-400 shrink-0" />
+              <Select value={selectedCampaignId} onValueChange={setSelectedCampaignId}>
+                <SelectTrigger className="w-56 text-xs h-8">
+                  <SelectValue placeholder="Filtrar por campanha" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">Todas as Campanhas</SelectItem>
+                  {campaigns.map((c) => (
+                    <SelectItem key={c.id} value={c.id}>
+                      {c.nome}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
             </div>
-            <CardDescription className="text-xs text-slate-500">
-              Cada participante possui um token e link exclusivo para resposta individual.
-            </CardDescription>
-          </div>
+          </CardHeader>
 
-          <div className="flex items-center gap-2">
-            <Filter className="w-4 h-4 text-slate-400 shrink-0" />
-            <Select value={selectedCampaignId} onValueChange={setSelectedCampaignId}>
-              <SelectTrigger className="w-56 text-xs h-8">
-                <SelectValue placeholder="Filtrar por campanha" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">Todas as Campanhas</SelectItem>
-                {campaigns.map((c) => (
-                  <SelectItem key={c.id} value={c.id}>
-                    {c.nome}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
-        </CardHeader>
+          <CardContent className="p-0">
+            {isLoading ? (
+              <div className="py-12 flex flex-col items-center justify-center text-slate-400">
+                <Loader2 className="w-6 h-6 animate-spin text-sky-600 mb-2" />
+                <p className="text-xs">Carregando participantes...</p>
+              </div>
+            ) : participantesPlanos.length === 0 ? (
+              <div className="py-12 text-center text-slate-500 text-sm">
+                Nenhum participante encontrado. Clique em &quot;Novo Participante&quot; ou
+                &quot;Importar em Lote&quot;.
+              </div>
+            ) : (
+              <Table>
+                <TableHeader>
+                  <TableRow className="hover:bg-transparent">
+                    <TableHead className="text-xs font-semibold text-slate-600">
+                      Participante
+                    </TableHead>
+                    <TableHead className="text-xs font-semibold text-slate-600">Campanha</TableHead>
+                    <TableHead className="text-xs font-semibold text-slate-600">Situação</TableHead>
+                    <TableHead className="text-xs font-semibold text-slate-600">
+                      Data de Resposta
+                    </TableHead>
+                    <TableHead className="text-xs font-semibold text-slate-600 text-right">
+                      Ações
+                    </TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {participantesPlanos.map((p) => {
+                    const campNome = p.expand?.campaign_id?.nome || 'Campanha'
+                    const isSending = sendingId === p.id
 
-        <CardContent className="p-0">
-          {isLoading ? (
-            <div className="py-12 flex flex-col items-center justify-center text-slate-400">
-              <Loader2 className="w-6 h-6 animate-spin text-sky-600 mb-2" />
-              <p className="text-xs">Carregando participantes...</p>
-            </div>
-          ) : participants.length === 0 ? (
-            <div className="py-12 text-center text-slate-500 text-sm">
-              Nenhum participante encontrado. Clique em &quot;Novo Participante&quot; ou
-              &quot;Importar em Lote&quot;.
-            </div>
-          ) : (
-            <Table>
-              <TableHeader>
-                <TableRow className="hover:bg-transparent">
-                  <TableHead className="text-xs font-semibold text-slate-600">
-                    Participante
-                  </TableHead>
-                  <TableHead className="text-xs font-semibold text-slate-600">Campanha</TableHead>
-                  <TableHead className="text-xs font-semibold text-slate-600">Situação</TableHead>
-                  <TableHead className="text-xs font-semibold text-slate-600">
-                    Data de Resposta
-                  </TableHead>
-                  <TableHead className="text-xs font-semibold text-slate-600 text-right">
-                    Ações
-                  </TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {participants.map((p) => {
-                  const campNome = p.expand?.campaign_id?.nome || 'Campanha'
-                  const isSending = sendingId === p.id
+                    return (
+                      <TableRow key={p.id} className="hover:bg-slate-50/70">
+                        <TableCell>
+                          <div className="font-semibold text-slate-800 text-sm">{p.nome}</div>
+                          <div className="text-xs text-slate-500">{p.email}</div>
+                        </TableCell>
+                        <TableCell className="text-xs text-slate-700 font-medium">
+                          {campNome}
+                        </TableCell>
+                        <TableCell>
+                          {p.respondido ? (
+                            <Badge className="bg-emerald-50 text-emerald-700 border-emerald-200 hover:bg-emerald-50 text-xs gap-1 font-medium">
+                              <CheckCircle2 className="w-3 h-3 text-emerald-600" />
+                              Respondido
+                            </Badge>
+                          ) : (
+                            <Badge
+                              variant="outline"
+                              className="bg-amber-50 text-amber-700 border-amber-200 text-xs gap-1 font-medium"
+                            >
+                              <Clock className="w-3 h-3 text-amber-600" />
+                              Pendente
+                            </Badge>
+                          )}
+                        </TableCell>
+                        <TableCell className="text-xs text-slate-500">
+                          {p.respondido_em
+                            ? new Date(p.respondido_em).toLocaleString('pt-BR', {
+                                dateStyle: 'short',
+                                timeStyle: 'short',
+                              })
+                            : '—'}
+                        </TableCell>
+                        <TableCell className="text-right space-x-1">
+                          {canManageParticipants && (
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              className="h-8 text-xs text-slate-700 hover:text-sky-700"
+                              onClick={() => handleCopyPersonalLink(p)}
+                              title="Copiar link exclusivo de avaliação"
+                            >
+                              <Copy className="w-3.5 h-3.5 mr-1" />
+                              Copiar Link
+                            </Button>
+                          )}
 
-                  return (
-                    <TableRow key={p.id} className="hover:bg-slate-50/70">
-                      <TableCell>
-                        <div className="font-semibold text-slate-800 text-sm">{p.nome}</div>
-                        <div className="text-xs text-slate-500">{p.email}</div>
-                      </TableCell>
-                      <TableCell className="text-xs text-slate-700 font-medium">
-                        {campNome}
-                      </TableCell>
-                      <TableCell>
-                        {p.respondido ? (
-                          <Badge className="bg-emerald-50 text-emerald-700 border-emerald-200 hover:bg-emerald-50 text-xs gap-1 font-medium">
-                            <CheckCircle2 className="w-3 h-3 text-emerald-600" />
-                            Respondido
-                          </Badge>
-                        ) : (
-                          <Badge
-                            variant="outline"
-                            className="bg-amber-50 text-amber-700 border-amber-200 text-xs gap-1 font-medium"
-                          >
-                            <Clock className="w-3 h-3 text-amber-600" />
-                            Pendente
-                          </Badge>
-                        )}
-                      </TableCell>
-                      <TableCell className="text-xs text-slate-500">
-                        {p.respondido_em
-                          ? new Date(p.respondido_em).toLocaleString('pt-BR', {
-                              dateStyle: 'short',
-                              timeStyle: 'short',
-                            })
-                          : '—'}
-                      </TableCell>
-                      <TableCell className="text-right space-x-1">
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          className="h-8 text-xs text-slate-700 hover:text-sky-700"
-                          onClick={() => handleCopyPersonalLink(p)}
-                          title="Copiar link exclusivo de avaliação"
-                        >
-                          <Copy className="w-3.5 h-3.5 mr-1" />
-                          Copiar Link
-                        </Button>
-
-                        {canSendInvites && !p.respondido ? (
-                          <Button
-                            variant="default"
-                            size="sm"
-                            className="h-8 text-xs bg-sky-600 hover:bg-sky-700"
-                            disabled={isSending}
-                            onClick={() => handleSendInvite(p, false)}
-                            title="Disparar convite por e-mail"
-                          >
-                            {isSending ? (
-                              <Loader2 className="w-3.5 h-3.5 animate-spin mr-1" />
-                            ) : (
-                              <Send className="w-3.5 h-3.5 mr-1" />
-                            )}
-                            Enviar Convite
-                          </Button>
-                        ) : (
-                          <span className="text-[11px] text-slate-400 italic px-2">
-                            {p.respondido ? 'Finalizado' : '—'}
-                          </span>
-                        )}
-                      </TableCell>
-                    </TableRow>
-                  )
-                })}
-              </TableBody>
-            </Table>
-          )}
-        </CardContent>
-      </Card>
+                          {canSendInvites && !p.respondido ? (
+                            <Button
+                              variant="default"
+                              size="sm"
+                              className="h-8 text-xs bg-sky-600 hover:bg-sky-700"
+                              disabled={isSending}
+                              onClick={() => handleSendInvite(p, false)}
+                              title="Disparar convite por e-mail"
+                            >
+                              {isSending ? (
+                                <Loader2 className="w-3.5 h-3.5 animate-spin mr-1" />
+                              ) : (
+                                <Send className="w-3.5 h-3.5 mr-1" />
+                              )}
+                              Enviar Convite
+                            </Button>
+                          ) : (
+                            <span className="text-[11px] text-slate-400 italic px-2">
+                              {p.respondido ? 'Finalizado' : '—'}
+                            </span>
+                          )}
+                        </TableCell>
+                      </TableRow>
+                    )
+                  })}
+                </TableBody>
+              </Table>
+            )}
+          </CardContent>
+        </Card>
+      )}
 
       {/* Modal Cadastro Individual */}
       <Dialog open={isSingleDialogOpen} onOpenChange={setIsSingleDialogOpen}>
