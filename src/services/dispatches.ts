@@ -80,6 +80,22 @@ export async function sendInviteViaBackend(
 }
 
 /**
+ * Redefinição de senha de outro usuário pelo painel, via rota de backend
+ * executada com privilégio de superuser (sem exigir oldPassword).
+ * Requisitos da rota: sessão autenticada com perfil ADMIN. A senha provisória
+ * é gerada server-side e NUNCA é devolvida na resposta (LGPD).
+ */
+export async function resetSenhaViaBackend(
+  usuarioId: string,
+  novaSenha: string,
+): Promise<{ success: boolean }> {
+  return await pb.send<{ success: boolean }>('/backend/v1/nps/reset-senha', {
+    method: 'POST',
+    body: { usuarioId, novaSenha },
+  })
+}
+
+/**
  * Disparo em lote pelo backend (hook /backend/v1/nps/send-invites-batch).
  * O backend decide quem recebe (trava de respondentes/já recebidos), envia
  * via Resend e grava o log em dispatches — o frontend só dispara e resume.

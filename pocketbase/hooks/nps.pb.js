@@ -131,6 +131,76 @@ routerAdd('GET', '/backend/v1/nps/survey-context', (e) => {
 })
 
 // ============================================================
+// POST /backend/v1/nps/reset-senha { usuarioId, novaSenha }
+// Redefinição da senha de OUTRO usuário pelo painel. Como a coleção
+// users só permite que cada registro altere a si mesmo (updateRule),
+// a senha antiga nunca estará disponível para o admin — a troca
+// acontece aqui com privilégio de SUPERUSER (sem oldPassword).
+//   - exige sessão autenticada com perfil "admin" (403 caso contrário);
+//   - recebe o id do usuário alvo e a nova senha (mínimo 8 caracteres,
+//     exigência do PocketBase para senhas de autenticação);
+//   - marca precisa_trocar_senha = true no alvo (troca obrigatória);
+//   - registra no log de sistema APENAS ação e id do alvo (LGPD:
+//     nada de senha, e-mail ou nome no log).
+// ============================================================
+routerAdd('POST', '/backend/v1/nps/reset-senha', (e) => {
+  const authRecord = e.auth
+  if (!authRecord) {
+    return e.json(401, { error: 'Sessão expirada. Faça login novamente.' })
+  }
+  if (authRecord.getString('perfil') !== 'admin') {
+    return e.json(403, {
+      error: 'Somente usuários com perfil ADMIN podem redefinir senhas.',
+    })
+  }
+
+  const info = e.requestInfo()
+  const body = info.body || {}
+  const usuarioId = (body.usuarioId || '').toString().trim()
+  const novaSenha = (body.novaSenha || '').toString()
+
+  if (usuarioId === '') {
+    return e.json(400, { error: 'Informe o usuário que terá a senha redefinida.' })
+  }
+  if (novaSenha.length < 8) {
+    return e.json(400, {
+      error: 'A senha provisória deve ter pelo menos 8 caracteres.',
+    })
+  }
+
+  try {
+    const alvo = $app.findRecordById('users', usuarioId)
+
+    // Privilégio de superuser: a validação de senha antiga (oldPassword)
+    // não se aplica neste contexto de salvamento interno.
+    alvo.setPassword(novaSenha)
+    alvo.set('precisa_trocar_senha', true)
+    $app.save(alvo)
+
+    // Log do sistema: apenas ação e id do alvo, sem senha e sem dados
+    // pessoais (LGPD). O painel registra quem executou.
+    try {
+      const logsCol = $app.findCollectionByNameOrId('system_logs')
+      const log = new Record(logsCol)
+      log.set('acao', 'redefinicao_senha')
+      log.set('detalhe', 'Senha redefinida pelo painel para o usuário ' + alvo.id + '.')
+      log.set('usuario', authRecord.getString('email') || 'admin')
+      $app.save(log)
+    } catch (errLog) {
+      console.log(
+        'Falha ao registrar log de redefinição de senha: ' + (errLog.message || String(errLog)),
+      )
+    }
+
+    return e.json(200, { success: true })
+  } catch (err) {
+    return e.json(500, {
+      error: 'Não foi possível redefinir a senha deste usuário. Tente novamente.',
+    })
+  }
+})
+
+// ============================================================
 // Campanhas — TRAVAS (server-side, valem para qualquer chamada de API)
 //   - status "ativa" exige área vinculada e pergunta NPS preenchida;
 //   - vigência "prazo" exige data de encerramento FUTURA;

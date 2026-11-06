@@ -5,6 +5,7 @@ import { z } from 'zod'
 import pb from '@/lib/pocketbase/client'
 import { useAuth } from '@/hooks/use-auth'
 import { extractFieldErrors, getErrorMessage } from '@/lib/pocketbase/errors'
+import { resetSenhaViaBackend } from '@/services/dispatches'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -164,25 +165,20 @@ export default function UsersPage() {
     if (!resetDialog) return
     setSavingPerfil(true)
     try {
-      // Marca a troca obrigatória; a nova senha é definida no primeiro acesso
-      // via tela de troca obrigatória, usando a senha provisória informada.
-      const prov = 'Fund@2025#' + Math.random().toString(36).slice(2, 8)
-      await pb.collection('users').update(resetDialog.id, {
-        precisa_trocar_senha: true,
-        password: prov,
-        passwordConfirm: prov,
-      })
+      // A troca acontece no backend com privilégio de superuser (a API de
+      // records exigiria oldPassword, que o admin não tem de outro usuário).
+      await resetSenhaViaBackend(resetDialog.id, 'Fund@2025#Troca')
       toast({
         title: 'Senha redefinida',
-        description: `Senha provisória de ${resetDialog.email}: ${prov} (informe-a com segurança e exija a troca no primeiro acesso).`,
+        description: `A senha de ${resetDialog.email} foi redefinida para a senha provisória padrão. Comunique-a com segurança e exija a troca no primeiro acesso.`,
         duration: 20000,
       })
       setResetDialog(null)
       loadUsers()
-    } catch {
+    } catch (err) {
       toast({
         title: 'Erro ao redefinir senha',
-        description: 'Não foi possível redefinir a senha deste usuário.',
+        description: getErrorMessage(err) || 'Não foi possível redefinir a senha deste usuário.',
         variant: 'destructive',
       })
     } finally {
