@@ -6,6 +6,8 @@ import pb from '@/lib/pocketbase/client'
 import { useAuth } from '@/hooks/use-auth'
 import { extractFieldErrors, getErrorMessage } from '@/lib/pocketbase/errors'
 import { resetSenhaViaBackend } from '@/services/dispatches'
+import { copiarParaAreaTransferencia, gerarSenhaProvisoria } from '@/lib/senha'
+import { Check, Copy } from 'lucide-react'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -78,6 +80,11 @@ export default function UsersPage() {
   const [novoPerfil, setNovoPerfil] = useState<string>('')
   const [resetDialog, setResetDialog] = useState<UserRow | null>(null)
   const [savingPerfil, setSavingPerfil] = useState(false)
+  const [senhaProvisoria, setSenhaProvisoria] = useState<{
+    usuario: string
+    senha: string
+  } | null>(null)
+  const [senhaCopiada, setSenhaCopiada] = useState(false)
 
   const form = useForm<FormData>({
     resolver: zodResolver(formSchema),
@@ -165,15 +172,19 @@ export default function UsersPage() {
     if (!resetDialog) return
     setSavingPerfil(true)
     try {
+      // Nome exibido na confirmação: nome real do usuário; sem nome, o e-mail.
+      // (corrige o "A senha de undefined foi redefinida" visto na tela)
+      const nomeExibicao = (resetDialog.name || '').trim() || resetDialog.email
+      // A senha provisória é gerada no frontend (aleatória e forte a cada
+      // redefinição) e enviada na chamada. Ela vive apenas em memória:
+      // nenhum console.log, nenhuma gravação em coleção.
+      const novaSenha = gerarSenhaProvisoria(16)
       // A troca acontece no backend com privilégio de superuser (a API de
       // records exigiria oldPassword, que o admin não tem de outro usuário).
-      await resetSenhaViaBackend(resetDialog.id, 'Fund@2025#Troca')
-      toast({
-        title: 'Senha redefinida',
-        description: `A senha de ${resetDialog.email} foi redefinida para a senha provisória padrão. Comunique-a com segurança e exija a troca no primeiro acesso.`,
-        duration: 20000,
-      })
+      await resetSenhaViaBackend(resetDialog.id, novaSenha)
       setResetDialog(null)
+      setSenhaCopiada(false)
+      setSenhaProvisoria({ usuario: nomeExibicao, senha: novaSenha })
       loadUsers()
     } catch (err) {
       toast({
@@ -183,6 +194,21 @@ export default function UsersPage() {
       })
     } finally {
       setSavingPerfil(false)
+    }
+  }
+
+  const handleCopiarSenha = async () => {
+    if (!senhaProvisoria) return
+    const ok = await copiarParaAreaTransferencia(senhaProvisoria.senha)
+    if (ok) {
+      setSenhaCopiada(true)
+      toast({ title: 'Senha copiada para a área de transferência.' })
+    } else {
+      toast({
+        title: 'Não foi possível copiar automaticamente',
+        description: 'Selecione a senha exibida e copie manualmente (Ctrl+C).',
+        variant: 'destructive',
+      })
     }
   }
 
@@ -455,6 +481,54 @@ export default function UsersPage() {
                 <KeyRound className="w-4 h-4 mr-2" />
               )}
               Gerar senha provisória
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Diálogo: senha provisória gerada (exibe uma vez, copiável) */}
+      <Dialog
+        open={!!senhaProvisoria}
+        onOpenChange={(o) => {
+          if (!o) setSenhaProvisoria(null)
+        }}
+      >
+        <DialogContent className="max-w-sm">
+          <DialogHeader>
+            <DialogTitle>Senha redefinida</DialogTitle>
+            <DialogDescription>
+              A senha de {senhaProvisoria?.usuario} foi redefinida. Comunique-a com segurança e
+              exija a troca no primeiro acesso.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-3 py-2">
+            <div className="rounded-md border border-slate-200 bg-slate-50 px-3 py-2.5">
+              <p className="text-[11px] font-medium uppercase tracking-wide text-slate-500">
+                Senha provisória
+              </p>
+              <p className="mt-1 font-mono text-base font-semibold text-slate-900 break-all select-all">
+                {senhaProvisoria?.senha}
+              </p>
+            </div>
+            <p className="text-[11px] text-slate-500">
+              Esta senha é exibida apenas agora e não pode ser recuperada depois. Copie-a e envie ao
+              usuário por um canal seguro.
+            </p>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={handleCopiarSenha}>
+              {senhaCopiada ? (
+                <Check className="w-4 h-4 mr-2 text-emerald-600" />
+              ) : (
+                <Copy className="w-4 h-4 mr-2" />
+              )}
+              {senhaCopiada ? 'Copiada' : 'Copiar senha'}
+            </Button>
+            <Button
+              onClick={() => setSenhaProvisoria(null)}
+              className="bg-sky-700 hover:bg-sky-800"
+            >
+              Concluído
             </Button>
           </DialogFooter>
         </DialogContent>

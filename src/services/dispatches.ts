@@ -83,7 +83,9 @@ export async function sendInviteViaBackend(
  * Redefinição de senha de outro usuário pelo painel, via rota de backend
  * executada com privilégio de superuser (sem exigir oldPassword).
  * Requisitos da rota: sessão autenticada com perfil ADMIN. A senha provisória
- * é gerada server-side e NUNCA é devolvida na resposta (LGPD).
+ * é gerada no FRONTEND (src/lib/senha.ts) e enviada no corpo da chamada;
+ * o backend nunca a registra em log (LGPD) e o frontend não a grava em
+ * nenhuma coleção — ela é exibida em tela apenas para o admin copiar.
  */
 export async function resetSenhaViaBackend(
   usuarioId: string,
